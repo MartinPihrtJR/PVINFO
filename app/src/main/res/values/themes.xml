@@ -1,0 +1,13 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- Base application theme. -->
+    <style name="Base.Theme.PVINFO" parent="Theme.Material3.DayNight.NoActionBar">
+        <!-- Customize your light theme here. -->
+        <!-- <item name="colorPrimary">@color/my_light_primary</item> -->
+    </style>
+
+    <style name="Theme.PVINFO" parent="Base.Theme.PVINFO" />
+
+    <style name="Button" parent="Widget.Material3.Button">
+        <item name="backgroundTint"> @color/accent</item>
+    </style>
+</resources>

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="black">#FF000000</color>
+    <color name="white">#FFFFFFFF</color>
+    <color name="background">#397F19</color>
+    <color name="main">#32A620</color>
+    <color name="accent">#4F62D8</color>
+    <color name="led_gray">#C2C2C2</color>
+    <color name="led_green">@color/main</color>
+    <color name="led_red">#FF0000</color>
+</resources>
