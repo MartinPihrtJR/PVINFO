@@ -1,10 +1,10 @@
 package cz.pihrtm.pv_info.datatype
 
 data class SolarInfo(
-    var hw: Float = 0f,
-    var pv: Float = 0f,
-    var src: Float = 0f,
-    var bat: Float = 0f,
+    var hw: String = "0",
+    var pv: String = "0",
+    var src: String = "0",
+    var bat: String = "0",
     var re_aux: Boolean = false,
     var re_sol: Boolean = false,
     var re_reg: Boolean = false,
@@ -13,10 +13,10 @@ data class SolarInfo(
     var led_bat: Boolean = false,
     var led_aux: Boolean = false,
     var led_err: Boolean = false,
-    var pv_hist: MutableList<Float> = mutableListOf(0f),
-    var src_hist: MutableList<Float> = mutableListOf(0f),
-    var bat_hist: MutableList<Float> = mutableListOf(0f),
-    var bat_temp: Float = 0f
+    var pv_hist: MutableList<String> = mutableListOf("0"),
+    var src_hist: MutableList<String> = mutableListOf("0"),
+    var bat_hist: MutableList<String> = mutableListOf("0"),
+    var temp: String = "0"
     /*
     "hw": 1.00,
     "pv": 38.1,
