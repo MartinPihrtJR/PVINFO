@@ -7,6 +7,9 @@
     <string name="btn_disconnect">Disconnect from PV</string>
     <string name="youNeedToConnect">You need to connect first!</string>
     <string name="we_need_bt">This app needs Bluetooth for it\'s core functionality!</string>
+    <string name="conn_timeout">Connection timed out</string>
+    <string name="closeDialog">Close</string>
+    <string name="connectingTo">Connecting to %1$s</string>
 
     <string name="solar_voltage">Solar: %1$s V</string>
     <string name="source_voltage">Source: %1$s V</string>
@@ -16,7 +19,7 @@
 
     <string name="battery_charger">Battery charged by: <b>%1$s</b></string>
     <string name="last_update">Last updated: <b>%1$s</b></string>
-    <string name="battery_temperature">Battery temperature: <b>%1$s °C</b></string>
+    <string name="battery_temperature">Battery temperature: <b>%1$.1f °C</b></string>
     
     <string name="graph_solar">Solar</string>
     <string name="graph_source">Source</string>

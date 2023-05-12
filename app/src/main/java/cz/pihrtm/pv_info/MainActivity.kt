@@ -3,16 +3,21 @@ package cz.pihrtm.pv_info
 import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.app.AlertDialog
+import android.app.Dialog
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothSocket
 import android.companion.AssociationRequest
+import android.companion.BluetoothDeviceFilter
 import android.companion.CompanionDeviceManager
 import android.content.Context
 import android.content.Intent
 import android.content.IntentSender
 import android.content.pm.PackageManager
+import android.icu.util.TimeUnit
 import android.os.Bundle
 import android.util.Log
+import android.util.TimeUtils
 import android.view.View
 import android.widget.Button
 import android.widget.ImageView
@@ -22,15 +27,27 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.app.ActivityCompat
 import com.github.mikephil.charting.charts.LineChart
+import com.github.mikephil.charting.components.YAxis
+import com.github.mikephil.charting.data.DataSet
+import com.github.mikephil.charting.data.Entry
+import com.github.mikephil.charting.data.LineData
+import com.github.mikephil.charting.data.LineDataSet
+import com.google.gson.Gson
 import cz.pihrtm.pv_info.datatype.SolarInfo
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
+import java.io.BufferedReader
 import java.io.IOException
-import java.lang.Exception
+import java.io.InputStream
+import java.io.InputStreamReader
+import java.time.LocalDateTime
+import java.time.LocalTime
+import java.time.format.DateTimeFormatter
+import java.time.temporal.TemporalUnit
 import java.util.UUID
+import kotlin.reflect.typeOf
 
 
 class MainActivity : AppCompatActivity() {
@@ -48,6 +65,7 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var pageData: SolarInfo
 
+    private var previousTime: LocalTime = LocalTime.now()
 
     private lateinit var deviceManager: CompanionDeviceManager
 
@@ -115,6 +133,10 @@ class MainActivity : AppCompatActivity() {
 
         deviceManager = getSystemService(Context.COMPANION_DEVICE_SERVICE) as CompanionDeviceManager
 
+        val deviceFilter: BluetoothDeviceFilter = BluetoothDeviceFilter.Builder().build()
+        val pairingRequest: AssociationRequest = AssociationRequest.Builder().addDeviceFilter(deviceFilter).build()
+
+
         checkForBTPerms()
 
 
@@ -146,6 +168,8 @@ class MainActivity : AppCompatActivity() {
                     }, null)
             }
             else{
+                isConnectedToDevice = false
+                onDisconnected()
                 btSocket.close()
             }
 
@@ -158,35 +182,77 @@ class MainActivity : AppCompatActivity() {
         CoroutineScope(Dispatchers.IO).launch {
             while (true){
                 if (isConnectedToDevice){
-                    if (!btSocket.isConnected ){
-                        btSocket = pvDevice.createRfcommSocketToServiceRecord(deviceUUID)
+                    if (btSocket.isConnected ){
 
-                        onConnected()
+                        runOnUiThread {
+                            onConnected()
+                        }
+                        val currentTime = LocalTime.now()
 
-                        btSocket.connect()
+                        try {
+                            // Read from the InputStream
+                            val stream = btSocket.inputStream
+
+                            val jsonString = readUntilChar(stream, '}') + "}"
+
+                            var jsonDecoded = SolarInfo()
+
+                            try{
+                                jsonDecoded = Gson().fromJson(jsonString, SolarInfo::class.java)
+                                previousTime = currentTime
+                            } catch (e: Exception){
+
+                            }
+
+
+                            Log.d("JSON", jsonDecoded.toString())
+
+                            pageData = jsonDecoded
+
+                            runOnUiThread {
+                                val diff = currentTime.minusSeconds(15)
+                                if (diff.isAfter(previousTime)){
+                                    isConnectedToDevice = false
+                                    btSocket.close()
+                                    onDisconnected()
+                                    val builder = AlertDialog.Builder(this@MainActivity)
+
+                                    builder.setMessage(R.string.conn_timeout)
+                                        .setCancelable(false)
+                                        .setPositiveButton(R.string.closeDialog) { dialog, _ ->
+                                            dialog.dismiss()
+                                        }
+
+                                    val alert = builder.create()
+                                    alert.show()
+
+
+                                }
+                                else{
+                                    previousTime = currentTime
+                                }
+
+                                pageData.lastUpdated = currentTime
+                            }
+
+
+                            runOnUiThread {
+                                updateFields()
+                            }
+
+
+                        } catch (e: Exception) {
+                            Log.d("ERR", e.toString())
+                            // Start the service over to restart listening mode
+
+                        }
+
                     }
-                    try {
-                        // Read from the InputStream
-                        Log.d("all", btSocket.inputStream.toString())
-                        /*var buffer = ByteArray(1024)
-                        var bytes = 0
 
-                        bytes = btSocket.inputStream.read(buffer)
-
-
-                        var json = buffer.decodeToString()
-
-                        Log.d("JSON", json)*/
-                        updateFields()
-                    } catch (e: Exception) {
-                        Log.d("ERR", e.toString())
-                        // Start the service over to restart listening mode
-
-                    }
 
                 }
 
-                delay(500)
+                delay(100)
             }
         }
 
@@ -201,6 +267,8 @@ class MainActivity : AppCompatActivity() {
         statusLayout.visibility = View.VISIBLE
         updateFields()
 
+
+
     }
 
 
@@ -211,50 +279,100 @@ class MainActivity : AppCompatActivity() {
         txtSolarV.text = getString(R.string.solar_voltage, pageData.pv)
         txtSourceV.text = getString(R.string.source_voltage, pageData.src)
         txtBatteryV.text = getString(R.string.battery_voltage, pageData.bat)
-        txtBatteryChargedBy.text = if (pageData.re_sol) getString(R.string.battery_charger, getString(R.string.graph_solar)) else getString(R.string.battery_charger, getString(R.string.graph_source))
-        txtBatteryTemp.text = getString(R.string.battery_temperature, pageData.temp)
-        txtFW.text = getString(R.string.fw_version, pageData.hw)
+        txtBatteryChargedBy.text = if (pageData.re_s == 1) getString(R.string.battery_charger, getString(R.string.graph_solar)) else getString(R.string.battery_charger, getString(R.string.graph_source))
+        txtBatteryTemp.text = getString(R.string.battery_temperature, pageData.temp.toFloat())
+        txtFW.text = getString(R.string.fw_version, pageData.fw)
+
+
+
+
+        txtLastUpdate.text = getString(R.string.last_update, pageData.lastUpdated.format(DateTimeFormatter.ISO_TIME))
 
 
         //buttons
         btnConnect.text = if (isConnectedToDevice) getString(R.string.btn_disconnect) else getString(R.string.btn_connect)
-
+        //TODO convert bool to int and otherwise
         //leds
-        if (pageData.led_aux){
+        if (pageData.led_a == 1){
             ledOutput.setImageResource(R.drawable.led_green)
         }
         else{
             ledOutput.setImageResource(R.drawable.led_off)
         }
 
-        if (pageData.led_bat){
+        if (pageData.led_b == 1){
             ledBattery.setImageResource(R.drawable.led_green)
         }
         else{
             ledBattery.setImageResource(R.drawable.led_off)
         }
 
-        if (pageData.led_src){
+        if (pageData.led_s == 1){
             ledSource.setImageResource(R.drawable.led_green)
         }
         else{
             ledSource.setImageResource(R.drawable.led_off)
         }
-        if (pageData.led_pv){
+        if (pageData.led_p == 1){
             ledSolar.setImageResource(R.drawable.led_green)
         }
         else{
             ledSolar.setImageResource(R.drawable.led_off)
         }
 
-        if (pageData.led_err){
+        if (pageData.led_e == 1){
             ledError.setImageResource(R.drawable.led_red)
         }
         else{
             ledError.setImageResource(R.drawable.led_off)
         }
 
-        //TODO Grafy
+
+        var entries: MutableList<Entry>  = mutableListOf(Entry())
+        for ((index, data) in pageData.pH.withIndex()) {
+            // turn your data into Entry objects
+            entries.add( Entry(index.toFloat(), data.toFloat()) )
+        }
+
+        var dataset: LineDataSet = LineDataSet(entries, getString(R.string.graph_solar))
+        dataset.color = getColor(R.color.white)
+        dataset.lineWidth = 5f
+
+        var lineData = LineData(dataset)
+        graphSolar.data = lineData
+        graphSolar.setVisibleYRange(0f, 50f, YAxis.AxisDependency.LEFT)
+        graphSolar.invalidate()
+
+        entries.clear()
+        for ((index, data) in pageData.bH.withIndex()) {
+            // turn your data into Entry objects
+            entries.add( Entry(index.toFloat(), data.toFloat()) )
+        }
+
+        dataset = LineDataSet(entries, getString(R.string.graph_battery))
+        dataset.color = getColor(R.color.white)
+        dataset.lineWidth = 5f
+        lineData = LineData(dataset)
+        graphBattery.data = lineData
+        graphBattery.setVisibleYRange(0f, 50f, YAxis.AxisDependency.LEFT)
+        graphBattery.invalidate()
+
+        entries.clear()
+        for ((index, data) in pageData.sH.withIndex()) {
+            // turn your data into Entry objects
+            entries.add( Entry(index.toFloat(), data.toFloat()) )
+        }
+
+        dataset = LineDataSet(entries, getString(R.string.graph_source))
+        dataset.color = getColor(R.color.white)
+        dataset.lineWidth = 5f
+        lineData = LineData(dataset)
+        graphSource.data = lineData
+        graphSource.invalidate()
+
+
+
+
 
 
     }
@@ -264,7 +382,7 @@ class MainActivity : AppCompatActivity() {
         ledLayout.visibility = View.GONE
         graphLayout.visibility = View.GONE
         statusLayout.visibility = View.GONE
-
+        updateFields()
 
 
 
@@ -282,15 +400,21 @@ class MainActivity : AppCompatActivity() {
                     val deviceToPair: BluetoothDevice? =
                         data?.getParcelableExtra(CompanionDeviceManager.EXTRA_DEVICE)
                     deviceToPair?.let { device ->
-
+                        Toast.makeText(this, getString(R.string.connectingTo, device.name), Toast.LENGTH_SHORT).show()
                         device.createBond()
                         // Maintain continuous interaction with a paired device.
                         pvDevice = device
                         while (device.bondState != BluetoothDevice.BOND_BONDED){
 
                         }
+                        val uuids = device.uuids
+                        deviceUUID = UUID.fromString(uuids[0].uuid.toString())
+
                         deviceName = deviceToPair!!.name
-                        deviceUUID = UUID.fromString("00030000-0000-1000-8000-00805F9B34FB")
+
+                        btSocket = pvDevice.createRfcommSocketToServiceRecord(deviceUUID)
+
+                        btSocket.connect()
 
                         Log.d("BT", "Connected")
 
@@ -299,10 +423,12 @@ class MainActivity : AppCompatActivity() {
 
 
                     isConnectedToDevice = true
+                    super.onActivityResult(requestCode, resultCode, data)
 
                 }
                 Activity.RESULT_CANCELED -> {
                     Toast.makeText(this, R.string.youNeedToConnect, Toast.LENGTH_LONG).show()
+                    super.onActivityResult(requestCode, resultCode, data)
                 }
             }
             else -> super.onActivityResult(requestCode, resultCode, data)
@@ -340,6 +466,23 @@ class MainActivity : AppCompatActivity() {
             )
             return
         }
+    }
+
+    private fun readUntilChar(stream: InputStream?, target: Char): String? {
+        val sb = StringBuilder()
+        try {
+            val buffer = BufferedReader(InputStreamReader(stream))
+            var r: Int
+            while (buffer.read().also { r = it } != -1) {
+                val c = r.toChar()
+                if (c == target) break
+                sb.append(c)
+            }
+            println(sb.toString())
+        } catch (e: IOException) {
+            // Error handling
+        }
+        return sb.toString()
     }
 
 }
