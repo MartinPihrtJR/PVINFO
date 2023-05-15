@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">PV-INFO</string>
+    <string name="app_name">SOPR</string> <!--TODO translate -->
 
     <string name="connected_to">Connected to: %1$s</string>
     <string name="disconnected">Disconnected</string>
@@ -10,6 +10,7 @@
     <string name="conn_timeout">Connection timed out</string>
     <string name="closeDialog">Close</string>
     <string name="connectingTo">Connecting to %1$s</string>
+    <string name="connecting">Connecting…</string>
     <string name="couldNotConnect">Could not connect to %1$s</string>
 
     <string name="solar_voltage">Solar: %1$s V</string>
@@ -26,6 +27,6 @@
     <string name="graph_source">Source</string>
     <string name="graph_battery">Battery</string>
 
-    <string name="fw_version">Firmware version %1$s             <a href="https://pihrt.com">pihrt.com</a></string>
+    <string name="fw_version">Firmware version %1$s         <a href="https://pihrt.com">pihrt.com</a></string>
     
 </resources>
