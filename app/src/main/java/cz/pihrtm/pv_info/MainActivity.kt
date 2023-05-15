@@ -4,7 +4,6 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.AlertDialog
-import android.app.Dialog
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothSocket
 import android.companion.AssociationRequest
@@ -14,10 +13,8 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentSender
 import android.content.pm.PackageManager
-import android.icu.util.TimeUnit
 import android.os.Bundle
 import android.util.Log
-import android.util.TimeUtils
 import android.view.View
 import android.widget.Button
 import android.widget.ImageView
@@ -28,7 +25,6 @@ import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.app.ActivityCompat
 import com.github.mikephil.charting.charts.LineChart
 import com.github.mikephil.charting.components.YAxis
-import com.github.mikephil.charting.data.DataSet
 import com.github.mikephil.charting.data.Entry
 import com.github.mikephil.charting.data.LineData
 import com.github.mikephil.charting.data.LineDataSet
@@ -42,12 +38,9 @@ import java.io.BufferedReader
 import java.io.IOException
 import java.io.InputStream
 import java.io.InputStreamReader
-import java.time.LocalDateTime
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
-import java.time.temporal.TemporalUnit
 import java.util.UUID
-import kotlin.reflect.typeOf
 
 
 class MainActivity : AppCompatActivity() {
@@ -65,7 +58,7 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var pageData: SolarInfo
 
-    private var previousTime: LocalTime = LocalTime.now()
+    private var lastTime: LocalTime = LocalTime.now()
 
     private lateinit var deviceManager: CompanionDeviceManager
 
@@ -92,11 +85,6 @@ class MainActivity : AppCompatActivity() {
 
 
 
-    private val pairingRequest: AssociationRequest = AssociationRequest.Builder()
-        // Find only devices that match this request filter.
-        // Stop scanning as soon as one device matching the filter is found.
-        .setSingleDevice(false)
-        .build()
 
     @SuppressLint("MissingPermission")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -184,9 +172,7 @@ class MainActivity : AppCompatActivity() {
                 if (isConnectedToDevice){
                     if (btSocket.isConnected ){
 
-                        runOnUiThread {
-                            onConnected()
-                        }
+
                         val currentTime = LocalTime.now()
 
                         try {
@@ -194,12 +180,12 @@ class MainActivity : AppCompatActivity() {
                             val stream = btSocket.inputStream
 
                             val jsonString = readUntilChar(stream, '}') + "}"
-
+                            Log.d("JSONString", jsonString)
                             var jsonDecoded = SolarInfo()
 
                             try{
                                 jsonDecoded = Gson().fromJson(jsonString, SolarInfo::class.java)
-                                previousTime = currentTime
+                                lastTime = currentTime
                             } catch (e: Exception){
 
                             }
@@ -210,8 +196,8 @@ class MainActivity : AppCompatActivity() {
                             pageData = jsonDecoded
 
                             runOnUiThread {
-                                val diff = currentTime.minusSeconds(15)
-                                if (diff.isAfter(previousTime)){
+                                val diff = currentTime.minusSeconds(10)
+                                if (diff.isAfter(lastTime)){
                                     isConnectedToDevice = false
                                     btSocket.close()
                                     onDisconnected()
@@ -229,7 +215,7 @@ class MainActivity : AppCompatActivity() {
 
                                 }
                                 else{
-                                    previousTime = currentTime
+                                    lastTime = currentTime
                                 }
 
                                 pageData.lastUpdated = currentTime
@@ -237,7 +223,7 @@ class MainActivity : AppCompatActivity() {
 
 
                             runOnUiThread {
-                                updateFields()
+                                onConnected()
                             }
 
 
@@ -286,7 +272,7 @@ class MainActivity : AppCompatActivity() {
 
 
 
-        txtLastUpdate.text = getString(R.string.last_update, pageData.lastUpdated.format(DateTimeFormatter.ISO_TIME))
+        txtLastUpdate.text = getString(R.string.last_update, pageData.lastUpdated.format(DateTimeFormatter.ofPattern("HH:MM:SS")))
 
 
         //buttons
@@ -336,7 +322,8 @@ class MainActivity : AppCompatActivity() {
 
         var dataset: LineDataSet = LineDataSet(entries, getString(R.string.graph_solar))
         dataset.color = getColor(R.color.white)
-        dataset.lineWidth = 5f
+        dataset.lineWidth = 3f
+        dataset.valueTextColor = getColor(R.color.white)
 
         var lineData = LineData(dataset)
         graphSolar.data = lineData
@@ -352,6 +339,8 @@ class MainActivity : AppCompatActivity() {
         dataset = LineDataSet(entries, getString(R.string.graph_battery))
         dataset.color = getColor(R.color.white)
         dataset.lineWidth = 5f
+
+
         lineData = LineData(dataset)
         graphBattery.data = lineData
         graphBattery.setVisibleYRange(0f, 50f, YAxis.AxisDependency.LEFT)
@@ -404,8 +393,13 @@ class MainActivity : AppCompatActivity() {
                         device.createBond()
                         // Maintain continuous interaction with a paired device.
                         pvDevice = device
+                        lastTime = LocalTime.now()
                         while (device.bondState != BluetoothDevice.BOND_BONDED){
-
+                            val timeNow = LocalTime.now()
+                            if (timeNow.minusSeconds(5).isAfter(lastTime)){
+                                Toast.makeText(this, getString(R.string.couldNotConnect, device.name), Toast.LENGTH_SHORT).show()
+                                super.onActivityResult(requestCode, resultCode, data)
+                            }
                         }
                         val uuids = device.uuids
                         deviceUUID = UUID.fromString(uuids[0].uuid.toString())
@@ -444,7 +438,7 @@ class MainActivity : AppCompatActivity() {
                     // Perform the Bluetooth connection here.
                 } else {
                     Toast.makeText(this, getString(R.string.we_need_bt), Toast.LENGTH_LONG).show()
-                    checkForBTPerms()
+                    finishActivity(0)
                 }
                 return
             }

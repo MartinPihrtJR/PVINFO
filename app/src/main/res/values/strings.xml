@@ -10,6 +10,7 @@
     <string name="conn_timeout">Connection timed out</string>
     <string name="closeDialog">Close</string>
     <string name="connectingTo">Connecting to %1$s</string>
+    <string name="couldNotConnect">Could not connect to %1$s</string>
 
     <string name="solar_voltage">Solar: %1$s V</string>
     <string name="source_voltage">Source: %1$s V</string>
