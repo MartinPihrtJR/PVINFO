@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">SOPR</string>
+    <string name="connected_to">Připojeno k: %1$s</string>
+    <string name="disconnected">Odpojeno</string>
+    <string name="btn_connect">Připojit k SOPR</string>
+    <string name="btn_disconnect">Odpojit od SOPR</string>
+    <string name="youNeedToConnect">Nejdříve se musíte připojit!</string>
+    <string name="we_need_bt">Tato aplikace vyžaduje Bluetooth k fungování!</string>
+    <string name="conn_timeout">Spojení vypršelo</string>
+    <string name="closeDialog">Zavřít</string>
+    <string name="connectingTo">Připojuji k %1$s</string>
+    <string name="connecting">Připojování…</string>
+    <string name="couldNotConnect">Nelze se připojit k %1$s</string>
+    <string name="solar_voltage">Solár: %1$s V</string>
+    <string name="source_voltage">Zdroj: %1$s V</string>
+    <string name="battery_voltage">Baterie: %1$s V</string>
+    <string name="output_status">Výstup</string>
+    <string name="failure_status">Chyba</string>
+    <string name="battery_charger">Baterie nabíjena: <b>%1$s</b></string>
+    <string name="last_update">Naposledy aktualizováno: <b>%1$s</b></string>
+    <string name="battery_temperature">Teplota baterie: <b>%1$s °C</b></string>
+    <string name="graph_solar">Solár</string>
+    <string name="graph_source">Zdroj</string>
+    <string name="graph_battery">Baterie</string>
+    <string name="fw_version">Verze firmware %1$s       pihrt.com</string>
+</resources>

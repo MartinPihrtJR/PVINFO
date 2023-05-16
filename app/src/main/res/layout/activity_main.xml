@@ -54,7 +54,62 @@
         android:layout_marginEnd="8dp"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@+id/connection_layout">
+        app:layout_constraintTop_toBottomOf="@+id/connection_layout"
+        tools:visibility="gone">
+
+        <ImageView
+            android:id="@+id/led_solar"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="32dp"
+            android:importantForAccessibility="no"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toTopOf="parent"
+            app:srcCompat="@drawable/led_off" />
+
+        <ImageView
+            android:id="@+id/led_source"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:layout_marginEnd="32dp"
+            android:importantForAccessibility="no"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toBottomOf="@+id/led_solar"
+            app:srcCompat="@drawable/led_off" />
+
+        <ImageView
+            android:id="@+id/led_battery"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:layout_marginEnd="32dp"
+            android:importantForAccessibility="no"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toBottomOf="@+id/led_source"
+            app:srcCompat="@drawable/led_off" />
+
+        <ImageView
+            android:id="@+id/led_output"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:layout_marginEnd="32dp"
+            android:importantForAccessibility="no"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toBottomOf="@+id/led_battery"
+            app:srcCompat="@drawable/led_off" />
+
+        <ImageView
+            android:id="@+id/led_failure"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:layout_marginEnd="32dp"
+            android:importantForAccessibility="no"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toBottomOf="@+id/led_output"
+            app:srcCompat="@drawable/led_off" />
 
         <TextView
             android:id="@+id/txt_solar_v"
@@ -68,16 +123,6 @@
             app:layout_constraintEnd_toStartOf="@+id/led_solar"
             app:layout_constraintTop_toTopOf="@+id/led_solar" />
 
-        <ImageView
-            android:id="@+id/led_solar"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginEnd="32dp"
-            android:importantForAccessibility="no"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintTop_toTopOf="parent"
-            app:srcCompat="@drawable/led_off" />
-
         <TextView
             android:id="@+id/txt_source_v"
             android:layout_width="0dp"
@@ -89,17 +134,6 @@
             app:layout_constraintBottom_toBottomOf="@+id/led_source"
             app:layout_constraintEnd_toStartOf="@+id/led_source"
             app:layout_constraintTop_toTopOf="@+id/led_source" />
-
-        <ImageView
-            android:id="@+id/led_source"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:layout_marginEnd="32dp"
-            android:importantForAccessibility="no"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintTop_toBottomOf="@+id/led_solar"
-            app:srcCompat="@drawable/led_off" />
 
         <TextView
             android:id="@+id/txt_battery_v"
@@ -113,17 +147,6 @@
             app:layout_constraintEnd_toStartOf="@+id/led_battery"
             app:layout_constraintTop_toTopOf="@+id/led_battery" />
 
-        <ImageView
-            android:id="@+id/led_battery"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:layout_marginEnd="32dp"
-            android:importantForAccessibility="no"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintTop_toBottomOf="@+id/led_source"
-            app:srcCompat="@drawable/led_off" />
-
         <TextView
             android:id="@+id/txt_output"
             android:layout_width="0dp"
@@ -136,17 +159,6 @@
             app:layout_constraintEnd_toStartOf="@+id/led_output"
             app:layout_constraintTop_toTopOf="@+id/led_output" />
 
-        <ImageView
-            android:id="@+id/led_output"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:layout_marginEnd="32dp"
-            android:importantForAccessibility="no"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintTop_toBottomOf="@+id/led_battery"
-            app:srcCompat="@drawable/led_off" />
-
         <TextView
             android:id="@+id/txt_failure"
             android:layout_width="0dp"
@@ -158,17 +170,6 @@
             app:layout_constraintBottom_toBottomOf="@+id/led_failure"
             app:layout_constraintEnd_toStartOf="@+id/led_failure"
             app:layout_constraintTop_toTopOf="@+id/led_failure" />
-
-        <ImageView
-            android:id="@+id/led_failure"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:layout_marginEnd="32dp"
-            android:importantForAccessibility="no"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintTop_toBottomOf="@+id/led_output"
-            app:srcCompat="@drawable/led_off" />
     </androidx.constraintlayout.widget.ConstraintLayout>
 
     <androidx.constraintlayout.widget.ConstraintLayout
@@ -180,7 +181,8 @@
         android:layout_marginEnd="8dp"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@+id/led_layout">
+        app:layout_constraintTop_toBottomOf="@+id/led_layout"
+        tools:visibility="gone">
 
         <TextView
             android:id="@+id/txt_batteryChargedBy"
@@ -228,7 +230,8 @@
         app:layout_constraintBottom_toTopOf="@+id/txt_firmware"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@+id/status_layout">
+        app:layout_constraintTop_toBottomOf="@+id/status_layout"
+        tools:visibility="gone">
 
 
         <com.github.mikephil.charting.charts.LineChart
@@ -264,12 +267,25 @@
         android:id="@+id/txt_firmware"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:autoLink="web"
+        android:linksClickable="false"
         android:text="@string/fw_version"
-        android:textAppearance="@style/TextAppearance.AppCompat.Medium"
-        android:textColor="#C3FFFFFF"
-        android:textColorLink="@color/white"
+        android:textColor="@color/main"
+        android:textColorLink="@color/main"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent" />
+        app:layout_constraintStart_toStartOf="parent"
+        tools:visibility="gone" />
+
+    <ImageView
+        android:id="@+id/img_sopr_logo"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="16dp"
+        android:layout_marginEnd="16dp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintHorizontal_bias="0.50"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/connection_layout"
+        app:srcCompat="@drawable/round_corners" />
 </androidx.constraintlayout.widget.ConstraintLayout>

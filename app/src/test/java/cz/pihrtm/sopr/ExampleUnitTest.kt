@@ -1,4 +1,4 @@
-package cz.pihrtm.pv_info
+package cz.pihrtm.sopr
 
 import org.junit.Test
 

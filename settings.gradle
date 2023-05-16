@@ -13,5 +13,5 @@ dependencyResolutionManagement {
         maven { url 'https://jitpack.io' }
     }
 }
-rootProject.name = "PV-INFO"
+rootProject.name = "SOPR"
 include ':app'

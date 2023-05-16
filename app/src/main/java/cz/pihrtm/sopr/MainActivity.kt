@@ -1,4 +1,4 @@
-package cz.pihrtm.pv_info
+package cz.pihrtm.sopr
 
 import android.Manifest
 import android.annotation.SuppressLint
@@ -14,6 +14,8 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentSender
 import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import android.view.View
@@ -21,6 +23,9 @@ import android.widget.Button
 import android.widget.ImageView
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.result.ActivityResultLauncher
+import androidx.activity.result.IntentSenderRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.app.ActivityCompat
@@ -31,13 +36,11 @@ import com.github.mikephil.charting.data.Entry
 import com.github.mikephil.charting.data.LineData
 import com.github.mikephil.charting.data.LineDataSet
 import com.google.gson.Gson
-import cz.pihrtm.pv_info.datatype.SolarInfo
+import cz.pihrtm.sopr.datatype.SolarInfo
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import java.io.BufferedReader
 import java.io.IOException
 import java.io.InputStream
@@ -45,6 +48,7 @@ import java.io.InputStreamReader
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import java.util.UUID
+import kotlin.math.roundToInt
 
 
 class LoadingDialogFragment : DialogFragment() {
@@ -55,10 +59,7 @@ class LoadingDialogFragment : DialogFragment() {
     }
 }
 
-interface BluetoothSocketListener {
-    fun onSocketConnected(socket: BluetoothSocket)
-    fun onSocketConnectionError(error: String)
-}
+
 
 class MainActivity : AppCompatActivity() {
 
@@ -73,6 +74,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var pvDevice: BluetoothDevice
     private lateinit var deviceUUID: UUID
     private lateinit var btSocket: BluetoothSocket
+    private var isSocketConnected = false
 
     private lateinit var dialog: LoadingDialogFragment
 
@@ -103,6 +105,12 @@ class MainActivity : AppCompatActivity() {
     private lateinit var txtBatteryTemp: TextView
     private lateinit var txtBatteryChargedBy: TextView
     private lateinit var txtLastUpdate: TextView
+    private lateinit var imgSopr: ImageView
+
+
+
+    private lateinit var deviceFoundLauncher: ActivityResultLauncher<IntentSenderRequest>
+
 
 
     @SuppressLint("MissingPermission")
@@ -132,13 +140,103 @@ class MainActivity : AppCompatActivity() {
         txtBatteryChargedBy = findViewById(R.id.txt_batteryChargedBy)
         txtBatteryTemp = findViewById(R.id.txt_batteryTemp)
         txtLastUpdate = findViewById(R.id.txt_lastUpdate)
+        imgSopr = findViewById(R.id.img_sopr_logo)
 
         val graphs = listOf(graphBattery, graphSolar, graphSource)
 
         for(graph in graphs){
             graph.legend.textColor = getColor(R.color.white)
-            graph.description.text = "" //TODO does not work - remake
+            graph.description.text = ""
         }
+
+        deviceFoundLauncher = registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
+            // Handle the result here
+            CoroutineScope(Dispatchers.IO).launch {
+                if (result.resultCode == Activity.RESULT_OK) {
+                    // Result is OK
+                    val data: Intent? = result.data
+                    // The user chose to pair the app with a Bluetooth device.
+                    val deviceToPair: BluetoothDevice? =
+                        data?.getParcelableExtra(CompanionDeviceManager.EXTRA_DEVICE)
+                    deviceToPair?.let { device ->
+                        runOnUiThread {
+                            Toast.makeText(
+                                this@MainActivity,
+                                getString(R.string.connectingTo, device.name),
+                                Toast.LENGTH_SHORT
+                            ).show()
+                        }
+
+                        device.createBond()
+                        // Maintain continuous interaction with a paired device.
+                        pvDevice = device
+                        lastTime = LocalTime.now()
+                        while (device.bondState != BluetoothDevice.BOND_BONDED) {
+                            val timeNow = LocalTime.now()
+                            if (timeNow.minusSeconds(BT_TIMEOUT).isAfter(lastTime)) {
+                                runOnUiThread {
+                                    Toast.makeText(
+                                        this@MainActivity,
+                                        getString(R.string.couldNotConnect, device.name),
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                }
+                                break
+                            }
+                        }
+                        try {
+                            val uuids = device.uuids
+                            deviceUUID = UUID.fromString(uuids[0].uuid.toString())
+
+                            deviceName = deviceToPair.name
+
+                            dialog.show(supportFragmentManager, "LoadingDialog")
+                            CoroutineScope(Dispatchers.IO).launch{
+                                btSocket = pvDevice.createRfcommSocketToServiceRecord(deviceUUID)
+                                Log.d("socket", btSocket.toString())
+                                kotlin.runCatching {
+                                    btSocket.connect()
+                                }
+
+                                while (!btSocket.isConnected) {}
+                                isSocketConnected = true
+                            }
+
+
+
+                            Log.d("BT", "Connected")
+                            isConnectingToDevice = true
+                        } catch (_: Exception){
+                            runOnUiThread {
+                                Toast.makeText(
+                                    this@MainActivity,
+                                    getString(R.string.couldNotConnect, device.name),
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        }
+
+
+                    }
+
+
+
+
+                    // Process the data as needed
+                } else {
+                    // Result is not OK
+                    runOnUiThread {
+                        Toast.makeText(
+                            this@MainActivity,
+                            R.string.youNeedToConnect,
+                            Toast.LENGTH_LONG
+                        ).show()
+                    }
+                }
+            }
+
+        }
+
 
 
         dialog = LoadingDialogFragment()
@@ -160,6 +258,13 @@ class MainActivity : AppCompatActivity() {
 
 
 
+        txtFW.setOnClickListener {
+            val url = "https://pihrt.com/elektronika/466-sopr-prepinac-pro-solarni-mini-elektrarnu"
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+            startActivity(intent)
+            finishActivity(0)
+
+        }
 
 
 
@@ -170,17 +275,27 @@ class MainActivity : AppCompatActivity() {
 
 
         btnConnect.setOnClickListener {
+            try {
+                if (btSocket.isConnected){
+                    btSocket.close()
+                }
+            }catch (e: Exception){
+                Log.d("del Socket", e.toString())
+            }
 
             if (!isConnectedToDevice) {
+
                 deviceManager.associate(pairingRequest,
                     object : CompanionDeviceManager.Callback() {
                         // Called when a device is found. Launch the IntentSender so the user
                         // can select the device they want to pair with.
                         override fun onDeviceFound(chooserLauncher: IntentSender) {
-                            startIntentSenderForResult(
+                            val intentSenderRequest = IntentSenderRequest.Builder(chooserLauncher).setFillInIntent(null).build()
+                            deviceFoundLauncher.launch(intentSenderRequest)
+                            /*startIntentSenderForResult(
                                 chooserLauncher,
                                 SELECT_DEVICE_REQUEST_CODE, null, 0, 0, 0
-                            )
+                            )*/
                         }
 
                         override fun onFailure(error: CharSequence?) {
@@ -204,24 +319,25 @@ class MainActivity : AppCompatActivity() {
 
                     if (isConnectingToDevice) {
 
-                        if (btSocket.isConnected) {
+                        if (isSocketConnected) {
                             val outStream = btSocket.outputStream
                             val inStream = btSocket.inputStream
                             outStream.write('?'.code)
                             outStream.flush()
-                            outStream.write('?'.code)
-                            outStream.flush()
-                            outStream.write('?'.code)
-                            outStream.flush()
-                            outStream.write('?'.code)
-                            outStream.flush()
+                            delay(1500)
                             val bufferString = readUntilChar(inStream, 'R') + "R"
                             val isDevice = bufferString.contains("SOPR")
-                            if (!isDevice || bufferString == "timeout") {
+                            Log.d("buffSTR", bufferString)
+                            if (!isDevice || bufferString.contains("timeout")) {
                                 dialog.dismiss()
                                 isConnectingToDevice = false
                                 runOnUiThread {
-                                    btSocket.close()
+                                    try {
+                                        btSocket.close()
+                                    } catch (e: Exception){
+                                        Log.d("Socket ERR", e.toString())
+                                    }
+
                                     onDisconnected()
                                     val builder = AlertDialog.Builder(this@MainActivity)
 
@@ -246,7 +362,7 @@ class MainActivity : AppCompatActivity() {
 
                         }
                     } else if (isConnectedToDevice) {
-                        if (btSocket.isConnected) {
+                        if (isSocketConnected) {
 
 
                             val currentTime = LocalTime.now()
@@ -257,11 +373,13 @@ class MainActivity : AppCompatActivity() {
 
                                 var jsonString = readUntilChar(stream, '}') + "}"
                                 jsonString = jsonString.replace("SOPR", "")
+                                jsonString = jsonString.replace("OPR", "")
                                 Log.d("JSONString", jsonString)
                                 var jsonDecoded = SolarInfo()
                                 if (jsonString.length > 5) {
                                     lastTime = currentTime
                                     dialog.dismiss()
+                                    pageData.lastUpdated = currentTime
                                 }
 
                                 try {
@@ -298,7 +416,7 @@ class MainActivity : AppCompatActivity() {
                                     }
 
 
-                                    pageData.lastUpdated = currentTime
+
                                 }
 
                                 if (jsonString.length > 5) {
@@ -336,6 +454,18 @@ class MainActivity : AppCompatActivity() {
         ledLayout.visibility = View.VISIBLE
         graphLayout.visibility = View.VISIBLE
         statusLayout.visibility = View.VISIBLE
+        txtFW.visibility = View.VISIBLE
+        imgSopr.visibility = View.GONE
+        updateFields()
+    }
+
+    private fun onDisconnected() {
+        isSocketConnected = false
+        ledLayout.visibility = View.GONE
+        graphLayout.visibility = View.GONE
+        statusLayout.visibility = View.GONE
+        txtFW.visibility = View.GONE
+        imgSopr.visibility = View.VISIBLE
         updateFields()
 
 
@@ -356,7 +486,7 @@ class MainActivity : AppCompatActivity() {
             R.string.battery_charger,
             getString(R.string.graph_solar)
         ) else getString(R.string.battery_charger, getString(R.string.graph_source))
-        txtBatteryTemp.text = getString(R.string.battery_temperature, pageData.temp.toFloat())
+        txtBatteryTemp.text = getString(R.string.battery_temperature,   pageData.temp.dropLast(3))
         txtFW.text = getString(R.string.fw_version, pageData.fw)
 
 
@@ -407,15 +537,15 @@ class MainActivity : AppCompatActivity() {
             // turn your data into Entry objects
             entries.add(Entry(index.toFloat(), data.toFloat()))
         }
+        entries.removeLast()
 
         var dataset: LineDataSet = LineDataSet(entries, getString(R.string.graph_solar))
         dataset.color = getColor(R.color.white)
         dataset.lineWidth = 3f
-        dataset.valueTextColor = getColor(R.color.white)
+        dataset.valueTextSize = 5f
 
         var lineData = LineData(dataset)
         graphSolar.data = lineData
-        graphSolar.setVisibleYRange(0f, 50f, YAxis.AxisDependency.LEFT)
         graphSolar.invalidate()
 
         entries.clear()
@@ -423,15 +553,16 @@ class MainActivity : AppCompatActivity() {
             // turn your data into Entry objects
             entries.add(Entry(index.toFloat(), data.toFloat()))
         }
+        entries.removeLast()
 
         dataset = LineDataSet(entries, getString(R.string.graph_battery))
         dataset.color = getColor(R.color.white)
         dataset.lineWidth = 5f
+        dataset.valueTextSize = 5f
 
 
         lineData = LineData(dataset)
         graphBattery.data = lineData
-        graphBattery.setVisibleYRange(0f, 50f, YAxis.AxisDependency.LEFT)
         graphBattery.invalidate()
 
         entries.clear()
@@ -439,89 +570,26 @@ class MainActivity : AppCompatActivity() {
             // turn your data into Entry objects
             entries.add(Entry(index.toFloat(), data.toFloat()))
         }
+        entries.removeLast()
 
         dataset = LineDataSet(entries, getString(R.string.graph_source))
         dataset.color = getColor(R.color.white)
         dataset.lineWidth = 5f
+        dataset.valueTextSize = 5f
+
         lineData = LineData(dataset)
         graphSource.data = lineData
         graphSource.invalidate()
 
 
-    }
-
-
-    private fun onDisconnected() {
-        ledLayout.visibility = View.GONE
-        graphLayout.visibility = View.GONE
-        statusLayout.visibility = View.GONE
-        updateFields()
-
 
     }
 
 
-    @SuppressLint("MissingPermission")
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        when (requestCode) {
-            SELECT_DEVICE_REQUEST_CODE -> when (resultCode) {
-                Activity.RESULT_OK -> {
-                    // The user chose to pair the app with a Bluetooth device.
-                    val deviceToPair: BluetoothDevice? =
-                        data?.getParcelableExtra(CompanionDeviceManager.EXTRA_DEVICE)
-                    deviceToPair?.let { device ->
-                        Toast.makeText(
-                            this,
-                            getString(R.string.connectingTo, device.name),
-                            Toast.LENGTH_SHORT
-                        ).show()
-                        device.createBond()
-                        // Maintain continuous interaction with a paired device.
-                        pvDevice = device
-                        lastTime = LocalTime.now()
-                        while (device.bondState != BluetoothDevice.BOND_BONDED) {
-                            val timeNow = LocalTime.now()
-                            if (timeNow.minusSeconds(5).isAfter(lastTime)) {
-                                Toast.makeText(
-                                    this,
-                                    getString(R.string.couldNotConnect, device.name),
-                                    Toast.LENGTH_SHORT
-                                ).show()
-                                super.onActivityResult(requestCode, resultCode, data)
-                            }
-                        }
-                        val uuids = device.uuids
-                        deviceUUID = UUID.fromString(uuids[0].uuid.toString())
-
-                        deviceName = deviceToPair.name
-
-                        btSocket = pvDevice.createRfcommSocketToServiceRecord(deviceUUID)
-                        GlobalScope.launch(Dispatchers.IO){
-                                btSocket.connect() //TODO app hangs when connecting
-                        }
-                        while (!btSocket.isConnected) {}
-
-                        dialog.show(supportFragmentManager, "LoadingDialog")
-                        Log.d("BT", "Connected")
 
 
-                    }
 
 
-                    isConnectingToDevice = true
-                    super.onActivityResult(requestCode, resultCode, data)
-
-                }
-
-                Activity.RESULT_CANCELED -> {
-                    Toast.makeText(this, R.string.youNeedToConnect, Toast.LENGTH_LONG).show()
-                    super.onActivityResult(requestCode, resultCode, data)
-                }
-            }
-
-            else -> super.onActivityResult(requestCode, resultCode, data)
-        }
-    }
     override fun onRequestPermissionsResult(
         requestCode: Int,
         permissions: Array<out String>,
@@ -538,6 +606,7 @@ class MainActivity : AppCompatActivity() {
                 }
                 return
             }
+
         }
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
     }
@@ -549,13 +618,16 @@ class MainActivity : AppCompatActivity() {
                 Manifest.permission.BLUETOOTH_CONNECT
             ) != PackageManager.PERMISSION_GRANTED
         ) {
-            ActivityCompat.requestPermissions(
-                this,
-                arrayOf(Manifest.permission.BLUETOOTH_CONNECT),
-                REQUEST_BLUETOOTH_CONNECT_PERMISSION
-            )
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                ActivityCompat.requestPermissions(
+                    this,
+                    arrayOf(Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.BLUETOOTH),
+                    REQUEST_BLUETOOTH_CONNECT_PERMISSION
+                )
+            }
             return
         }
+
     }
 
     private fun readUntilChar(stream: InputStream?, target: Char): String {
@@ -580,6 +652,36 @@ class MainActivity : AppCompatActivity() {
             // Error handling
         }
         return sb.toString()
+    }
+
+    override fun onResume() {
+        try{
+            if (!btSocket.isConnected){
+                if (isConnectedToDevice){
+                    isSocketConnected = false
+                    isConnectedToDevice = false
+                    isConnectingToDevice = false
+                    onDisconnected()
+                }
+            }
+        }catch (e: Exception){
+            if (isConnectedToDevice){
+                isSocketConnected = false
+                isConnectedToDevice = false
+                isConnectingToDevice = false
+                onDisconnected()
+            }
+        }
+
+
+
+        super.onResume()
+    }
+
+    override fun onPause() {
+
+
+        super.onPause()
     }
 
 }

@@ -4,11 +4,11 @@ plugins {
 }
 
 android {
-    namespace 'cz.pihrtm.pv_info'
+    namespace 'cz.pihrtm.sopr'
     compileSdk 33
 
     defaultConfig {
-        applicationId "cz.pihrtm.pv_info"
+        applicationId "cz.pihrtm.sopr"
         minSdk 28
         targetSdk 33
         versionCode 1

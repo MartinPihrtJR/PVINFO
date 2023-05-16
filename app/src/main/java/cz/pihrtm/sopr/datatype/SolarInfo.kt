@@ -1,4 +1,4 @@
-package cz.pihrtm.pv_info.datatype
+package cz.pihrtm.sopr.datatype
 
 import java.time.LocalTime
 

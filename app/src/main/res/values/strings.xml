@@ -21,12 +21,13 @@
 
     <string name="battery_charger">Battery charged by: <b>%1$s</b></string>
     <string name="last_update">Last updated: <b>%1$s</b></string>
-    <string name="battery_temperature">Battery temperature: <b>%1$.1f °C</b></string>
+    <string name="battery_temperature">Battery temperature: <b>%1$s °C</b></string>
     
     <string name="graph_solar">Solar</string>
     <string name="graph_source">Source</string>
     <string name="graph_battery">Battery</string>
 
-    <string name="fw_version">Firmware version %1$s         <a href="https://pihrt.com">pihrt.com</a></string>
+
+    <string name="fw_version">Firmware version %1$s       pihrt.com</string>
     
 </resources>
