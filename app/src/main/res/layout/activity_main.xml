@@ -231,7 +231,7 @@
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@+id/status_layout"
-        tools:visibility="gone">
+        tools:visibility="visible">
 
 
         <com.github.mikephil.charting.charts.LineChart
@@ -287,5 +287,6 @@
         app:layout_constraintHorizontal_bias="0.50"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@+id/connection_layout"
-        app:srcCompat="@drawable/round_corners" />
+        app:srcCompat="@drawable/round_corners"
+        tools:visibility="gone" />
 </androidx.constraintlayout.widget.ConstraintLayout>

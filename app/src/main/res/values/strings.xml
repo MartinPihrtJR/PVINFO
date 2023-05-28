@@ -1,10 +1,10 @@
 <resources>
-    <string name="app_name">SOPR</string> <!--TODO translate -->
+    <string name="app_name">SOPR</string> 
 
     <string name="connected_to">Connected to: %1$s</string>
     <string name="disconnected">Disconnected</string>
-    <string name="btn_connect">Connect to PV</string>
-    <string name="btn_disconnect">Disconnect from PV</string>
+    <string name="btn_connect">Connect to SOPR</string>
+    <string name="btn_disconnect">Disconnect from SOPR</string>
     <string name="youNeedToConnect">You need to connect first!</string>
     <string name="we_need_bt">This app needs Bluetooth for it\'s core functionality!</string>
     <string name="conn_timeout">Connection timed out</string>
@@ -12,6 +12,10 @@
     <string name="connectingTo">Connecting to %1$s</string>
     <string name="connecting">Connecting…</string>
     <string name="couldNotConnect">Could not connect to %1$s</string>
+
+    <string name="gps_title">Enable GPS</string>
+    <string name="gps_content">GPS is required for this app. Please enable GPS.</string>
+    <string name="gps_openSettings">Settings</string>
 
     <string name="solar_voltage">Solar: %1$s V</string>
     <string name="source_voltage">Source: %1$s V</string>

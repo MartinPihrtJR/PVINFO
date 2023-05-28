@@ -11,12 +11,15 @@ import android.companion.AssociationRequest
 import android.companion.BluetoothDeviceFilter
 import android.companion.CompanionDeviceManager
 import android.content.Context
+import android.content.DialogInterface
 import android.content.Intent
 import android.content.IntentSender
 import android.content.pm.PackageManager
+import android.location.LocationManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import android.util.Log
 import android.view.View
 import android.widget.Button
@@ -29,12 +32,17 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import androidx.fragment.app.DialogFragment
 import com.github.mikephil.charting.charts.LineChart
+import com.github.mikephil.charting.components.MarkerView
 import com.github.mikephil.charting.components.YAxis
 import com.github.mikephil.charting.data.Entry
 import com.github.mikephil.charting.data.LineData
 import com.github.mikephil.charting.data.LineDataSet
+import com.github.mikephil.charting.formatter.ValueFormatter
+import com.github.mikephil.charting.highlight.Highlight
+import com.github.mikephil.charting.listener.OnChartValueSelectedListener
 import com.google.gson.Gson
 import cz.pihrtm.sopr.datatype.SolarInfo
 import kotlinx.coroutines.CoroutineScope
@@ -113,6 +121,16 @@ class MainActivity : AppCompatActivity() {
 
 
 
+    class CustomMarkerView(context: Context, layoutResource: Int) : MarkerView(context, layoutResource) {
+        // Set the value text
+        fun setValueText(value: String) {
+            val tvValue: TextView = findViewById(R.id.tvValue)
+            tvValue.text = value
+        }
+    }
+
+
+
     @SuppressLint("MissingPermission")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -142,11 +160,43 @@ class MainActivity : AppCompatActivity() {
         txtLastUpdate = findViewById(R.id.txt_lastUpdate)
         imgSopr = findViewById(R.id.img_sopr_logo)
 
-        val graphs = listOf(graphBattery, graphSolar, graphSource)
+        val graphs = listOf(graphBattery, graphSolar,graphSource)
 
         for(graph in graphs){
+
+            val graphTopOffset =    60f
+            val graphLeftOffset =   60f
+            val graphRightOffset =  60f
+            val graphBottomOffset = 60f
+
+            graph.setViewPortOffsets(graphLeftOffset, graphTopOffset, graphRightOffset, graphBottomOffset)
+
+            graph.setPinchZoom(true)
             graph.legend.textColor = getColor(R.color.white)
             graph.description.text = ""
+            graph.xAxis.textColor = getColor(R.color.white)
+            graph.axisLeft.textColor = getColor(R.color.white)
+            graph.axisRight.textColor = getColor(R.color.white)
+            graph.setDrawMarkers(true)
+            val markerView = CustomMarkerView(this, R.layout.custom_marker_view)
+            graph.marker = markerView
+
+
+
+            graph.setOnChartValueSelectedListener(object : OnChartValueSelectedListener {
+                override fun onValueSelected(e: Entry?, h: Highlight?) {
+                    if (e != null) {
+                        val value = e.y.toString()
+                        markerView.setValueText(value)
+                        markerView.refreshContent(e, h)
+                        markerView.visibility = View.VISIBLE
+                    }
+                }
+
+                override fun onNothingSelected() {
+                    markerView.visibility = View.GONE
+                }
+            })
         }
 
         deviceFoundLauncher = registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
@@ -255,14 +305,16 @@ class MainActivity : AppCompatActivity() {
 
 
         checkForBTPerms()
-
+        if (!isGpsEnabled(this)) {
+            showGpsEnableDialog(this)
+        }
 
 
         txtFW.setOnClickListener {
             val url = "https://pihrt.com/elektronika/466-sopr-prepinac-pro-solarni-mini-elektrarnu"
             val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
             startActivity(intent)
-            finishActivity(0)
+            finish()
 
         }
 
@@ -371,12 +423,35 @@ class MainActivity : AppCompatActivity() {
                                 // Read from the InputStream
                                 val stream = btSocket.inputStream
 
-                                var jsonString = readUntilChar(stream, '}') + "}"
-                                jsonString = jsonString.replace("SOPR", "")
-                                jsonString = jsonString.replace("OPR", "")
+                                readUntilChar(stream, '{')
+                                val jsonSb = StringBuilder(10000)
+                                jsonSb.append("{")
+                                jsonSb.append( readUntilChar(stream, '}') )
+                                jsonSb.append("}")
+
+                                //replace everything before {
+                                var indexOfDesiredChar = jsonSb.indexOf("{")
+
+                                if (indexOfDesiredChar != -1) {
+                                    // Replace the portion of the string before the desired character with an empty string
+                                    jsonSb.replace(0, indexOfDesiredChar, "")
+                                }
+
+                                //replace everything after }, should end up with isolated JSON
+                                indexOfDesiredChar = jsonSb.indexOf("}")
+                                if (indexOfDesiredChar != -1) {
+                                    // Replace the portion of the string before the desired character with an empty string
+                                    jsonSb.replace(indexOfDesiredChar + 1, jsonSb.length, "")
+                                }
+
+
+                                val jsonString = jsonSb.toString()
+
+
+
                                 Log.d("JSONString", jsonString)
                                 var jsonDecoded = SolarInfo()
-                                if (jsonString.length > 5) {
+                                if (jsonString.startsWith('{') && jsonString.endsWith('}')) {
                                     lastTime = currentTime
                                     dialog.dismiss()
                                     pageData.lastUpdated = currentTime
@@ -419,7 +494,7 @@ class MainActivity : AppCompatActivity() {
 
                                 }
 
-                                if (jsonString.length > 5) {
+                                if (jsonString.startsWith('{') && jsonString.endsWith('}')) {
                                     runOnUiThread {
                                         onConnected()
                                     }
@@ -482,7 +557,7 @@ class MainActivity : AppCompatActivity() {
         txtSolarV.text = getString(R.string.solar_voltage, pageData.pv)
         txtSourceV.text = getString(R.string.source_voltage, pageData.src)
         txtBatteryV.text = getString(R.string.battery_voltage, pageData.bat)
-        txtBatteryChargedBy.text = if (pageData.re_s == 1) getString(
+        txtBatteryChargedBy.text = if (pageData.re_s == 0) getString(
             R.string.battery_charger,
             getString(R.string.graph_solar)
         ) else getString(R.string.battery_charger, getString(R.string.graph_source))
@@ -543,8 +618,11 @@ class MainActivity : AppCompatActivity() {
         dataset.color = getColor(R.color.white)
         dataset.lineWidth = 3f
         dataset.valueTextSize = 5f
+        dataset.setDrawValues(false)
 
         var lineData = LineData(dataset)
+
+
         graphSolar.data = lineData
         graphSolar.invalidate()
 
@@ -557,8 +635,9 @@ class MainActivity : AppCompatActivity() {
 
         dataset = LineDataSet(entries, getString(R.string.graph_battery))
         dataset.color = getColor(R.color.white)
-        dataset.lineWidth = 5f
+        dataset.lineWidth = 3f
         dataset.valueTextSize = 5f
+        dataset.setDrawValues(false)
 
 
         lineData = LineData(dataset)
@@ -574,8 +653,9 @@ class MainActivity : AppCompatActivity() {
 
         dataset = LineDataSet(entries, getString(R.string.graph_source))
         dataset.color = getColor(R.color.white)
-        dataset.lineWidth = 5f
+        dataset.lineWidth = 3f
         dataset.valueTextSize = 5f
+        dataset.setDrawValues(false)
 
         lineData = LineData(dataset)
         graphSource.data = lineData
@@ -597,12 +677,12 @@ class MainActivity : AppCompatActivity() {
     ) {
         when (requestCode) {
             REQUEST_BLUETOOTH_CONNECT_PERMISSION -> {
-                if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                if (grantResults.isNotEmpty() && grantResults.all {it == PackageManager.PERMISSION_GRANTED }) {
                     // Permission has been granted.
                     // Perform the Bluetooth connection here.
                 } else {
                     Toast.makeText(this, getString(R.string.we_need_bt), Toast.LENGTH_LONG).show()
-                    finishActivity(0)
+                    finish()
                 }
                 return
             }
@@ -625,34 +705,77 @@ class MainActivity : AppCompatActivity() {
                     REQUEST_BLUETOOTH_CONNECT_PERMISSION
                 )
             }
-            return
+
         }
+
+        if(Build.VERSION.SDK_INT <= Build.VERSION_CODES.R){
+            if (!arePermissionsGranted()){
+                ActivityCompat.requestPermissions(
+                    this,
+                    arrayOf(
+                        Manifest.permission.BLUETOOTH,
+                        Manifest.permission.BLUETOOTH_ADMIN,
+                        Manifest.permission.ACCESS_FINE_LOCATION,
+                        Manifest.permission.ACCESS_COARSE_LOCATION
+                    ),
+                    REQUEST_BLUETOOTH_CONNECT_PERMISSION
+                )
+            }
+        }
+        return
+
 
     }
 
     private fun readUntilChar(stream: InputStream?, target: Char): String {
         val sb = StringBuilder()
+        var receivedChar: Char? = null
         try {
-            val buffer = BufferedReader(InputStreamReader(stream))
-            var r: Int
+            var data: Int
             val lastTime = LocalTime.now()
-            while (buffer.read().also { r = it } != -1) {
+            do {
                 if (LocalTime.now().minusSeconds(BT_READ_TIMEOUT).isAfter(lastTime)) {
                     sb.clear()
                     sb.append("timeout")
                     break
                 }
-
-                val c = r.toChar()
-                if (c == target) break
-                sb.append(c)
-            }
+                data = stream!!.read()
+                if (data != -1) {
+                    receivedChar = data.toChar()
+                    sb.append(receivedChar)
+                }
+            } while (data != -1 && receivedChar != target)
             return sb.toString()
         } catch (e: IOException) {
             // Error handling
         }
         return sb.toString()
     }
+
+    private fun arePermissionsGranted(): Boolean {
+        // Check if the required permissions are granted
+        val bluetoothPermission = ContextCompat.checkSelfPermission(
+            this, Manifest.permission.BLUETOOTH
+        )
+        val bluetoothAdminPermission = ContextCompat.checkSelfPermission(
+            this, Manifest.permission.BLUETOOTH_ADMIN
+        )
+        val fineLocationPermission = ContextCompat.checkSelfPermission(
+            this, Manifest.permission.ACCESS_FINE_LOCATION
+        )
+        val coarseLocationPermission = ContextCompat.checkSelfPermission(
+            this, Manifest.permission.ACCESS_COARSE_LOCATION
+        )
+
+        // Return true if all the required permissions are granted
+        return (bluetoothPermission == PackageManager.PERMISSION_GRANTED &&
+                bluetoothAdminPermission == PackageManager.PERMISSION_GRANTED &&
+                fineLocationPermission == PackageManager.PERMISSION_GRANTED &&
+                coarseLocationPermission == PackageManager.PERMISSION_GRANTED)
+    }
+
+
+
 
     override fun onResume() {
         try{
@@ -672,6 +795,10 @@ class MainActivity : AppCompatActivity() {
                 onDisconnected()
             }
         }
+        checkForBTPerms()
+        if (!isGpsEnabled(this)) {
+            showGpsEnableDialog(this)
+        }
 
 
 
@@ -683,5 +810,38 @@ class MainActivity : AppCompatActivity() {
 
         super.onPause()
     }
+
+    // Function to check if GPS is enabled
+    private fun isGpsEnabled(context: Context): Boolean {
+        val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
+        return locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)
+    }
+
+    // Function to show a dialog to enable GPS
+    private fun showGpsEnableDialog(context: Context) {
+        val alertDialogBuilder = AlertDialog.Builder(context)
+        alertDialogBuilder.apply {
+            setTitle(R.string.gps_title)
+            setMessage(R.string.gps_content)
+            setCancelable(false)
+            setPositiveButton(R.string.gps_openSettings) { dialog: DialogInterface, _: Int ->
+                // Open GPS settings
+                val intent = Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)
+                context.startActivity(intent)
+                dialog.dismiss()
+            }
+            setNegativeButton(R.string.closeDialog) { dialog: DialogInterface, _: Int ->
+                dialog.dismiss()
+                Toast.makeText(context, R.string.gps_content, Toast.LENGTH_LONG).show()
+                finish()
+            }
+        }
+        val alertDialog = alertDialogBuilder.create()
+        alertDialog.show()
+    }
+
+
+
+
 
 }

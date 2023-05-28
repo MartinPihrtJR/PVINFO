@@ -24,4 +24,9 @@
     <string name="graph_source">Zdroj</string>
     <string name="graph_battery">Baterie</string>
     <string name="fw_version">Verze firmware %1$s       pihrt.com</string>
+
+
+    <string name="gps_title">Povolení GPS</string>
+    <string name="gps_content">Je potřeba GPS pro funkci této aplikace. Povolte prosím GPS.</string>
+    <string name="gps_openSettings">Nastavení</string>
 </resources>
