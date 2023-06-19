@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">SOPR</string> 
+    <string name="app_name">SOPR</string>
 
     <string name="connected_to">Connected to: %1$s</string>
     <string name="disconnected">Disconnected</string>
@@ -25,13 +25,20 @@
 
     <string name="battery_charger">Battery charged by: <b>%1$s</b></string>
     <string name="last_update">Last updated: <b>%1$s</b></string>
+    <string name="runtime">Runtime: <b>%1$d</b>d <b>%2$d</b>h <b>%3$d</b>m <b>%4$d</b>s</string>
     <string name="battery_temperature">Battery temperature: <b>%1$s °C</b></string>
-    
+
     <string name="graph_solar">Solar</string>
     <string name="graph_source">Source</string>
     <string name="graph_battery">Battery</string>
 
+    <string name="settings_text">Settings</string>
+    <string name="settings_btnBack">Back</string>
+    <string name="settings_update_rate">Update rate (s): </string>
+    <string name="settings_btn_save">Save settings</string>
+    <string name="settings_saved">Saved.</string>
+
 
     <string name="fw_version">Firmware version %1$s       pihrt.com</string>
-    
+
 </resources>

@@ -4,6 +4,7 @@ import java.time.LocalTime
 
 data class SolarInfo(
     var fw: String = "0",
+    var run: String = "0",
     var pv: String = "0",
     var src: String = "0",
     var bat: String = "0",

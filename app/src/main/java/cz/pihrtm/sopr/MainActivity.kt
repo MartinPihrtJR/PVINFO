@@ -14,6 +14,7 @@ import android.content.Context
 import android.content.DialogInterface
 import android.content.Intent
 import android.content.IntentSender
+import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.location.LocationManager
 import android.net.Uri
@@ -23,6 +24,7 @@ import android.provider.Settings
 import android.util.Log
 import android.view.View
 import android.widget.Button
+import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.TextView
 import android.widget.Toast
@@ -44,17 +46,20 @@ import com.github.mikephil.charting.formatter.ValueFormatter
 import com.github.mikephil.charting.highlight.Highlight
 import com.github.mikephil.charting.listener.OnChartValueSelectedListener
 import com.google.gson.Gson
+import cz.pihrtm.sopr.datatype.Constants
 import cz.pihrtm.sopr.datatype.SolarInfo
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import org.w3c.dom.Text
 import java.io.BufferedReader
 import java.io.IOException
 import java.io.InputStream
 import java.io.InputStreamReader
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
+import java.util.Dictionary
 import java.util.UUID
 import kotlin.math.roundToInt
 
@@ -114,6 +119,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var txtBatteryChargedBy: TextView
     private lateinit var txtLastUpdate: TextView
     private lateinit var imgSopr: ImageView
+    private lateinit var btnSettings: ImageButton
+    private lateinit var txtRuntime: TextView
 
 
 
@@ -159,6 +166,8 @@ class MainActivity : AppCompatActivity() {
         txtBatteryTemp = findViewById(R.id.txt_batteryTemp)
         txtLastUpdate = findViewById(R.id.txt_lastUpdate)
         imgSopr = findViewById(R.id.img_sopr_logo)
+        btnSettings = findViewById(R.id.btn_settings)
+        txtRuntime = findViewById(R.id.txt_runtime)
 
         val graphs = listOf(graphBattery, graphSolar,graphSource)
 
@@ -318,6 +327,11 @@ class MainActivity : AppCompatActivity() {
 
         }
 
+        btnSettings.setOnClickListener {
+            val intent = Intent(this, SettingsActivity::class.java)
+            startActivity(intent)
+        }
+
 
 
 
@@ -361,7 +375,7 @@ class MainActivity : AppCompatActivity() {
                 btSocket.close()
             }
 
-
+            onDisconnected()
         }
 
         CoroutineScope(Dispatchers.IO).launch {
@@ -422,6 +436,10 @@ class MainActivity : AppCompatActivity() {
                             try {
                                 // Read from the InputStream
                                 val stream = btSocket.inputStream
+                                val outputStream = btSocket.outputStream
+
+                                outputStream.write('J'.code)
+                                outputStream.flush()
 
                                 readUntilChar(stream, '{')
                                 val jsonSb = StringBuilder(10000)
@@ -460,8 +478,8 @@ class MainActivity : AppCompatActivity() {
                                 try {
                                     jsonDecoded = Gson().fromJson(jsonString, SolarInfo::class.java)
 
-                                } catch (_: Exception) {
-
+                                } catch (e: Exception) {
+                                    Log.d("GSON_E", e.toString())
                                 }
 
 
@@ -516,7 +534,8 @@ class MainActivity : AppCompatActivity() {
                         }
                     }
 
-                    delay(100)
+                    val delay = 1000 * getSharedPreferences(Constants.SHARED_PREFS_SETTINGS, Context.MODE_PRIVATE).getInt(Constants.SETTINGS_KEY_REFRESHSECS, 3)
+                    delay(delay.toLong())
                 }
             }
         
@@ -564,13 +583,31 @@ class MainActivity : AppCompatActivity() {
         txtBatteryTemp.text = getString(R.string.battery_temperature,   pageData.temp.dropLast(3))
         txtFW.text = getString(R.string.fw_version, pageData.fw)
 
-
+        btnSettings.visibility = if (isConnectedToDevice) View.GONE else View.VISIBLE
 
 
         txtLastUpdate.text = getString(
             R.string.last_update,
             pageData.lastUpdated.format(DateTimeFormatter.ofPattern("HH:mm:ss"))
         )
+
+        var runtimeData = mutableListOf<Int>(0, 0, 0, 0)
+
+        var runtimeDataString = pageData.run.split('.')
+
+        for (data in runtimeDataString){
+            runtimeData[runtimeDataString.indexOf(data)] = data.toInt()
+        }
+
+
+        try{
+            txtRuntime.text = getString(R.string.runtime, runtimeData[0], runtimeData[1], runtimeData[2], runtimeData[3],)
+        } catch (e: Exception){
+            Log.d("RenderError", e.toString())
+        }
+
+
+
 
 
         //buttons

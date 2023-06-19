@@ -25,8 +25,17 @@
     <string name="graph_battery">Baterie</string>
     <string name="fw_version">Verze firmware %1$s       pihrt.com</string>
 
+    <string name="runtime">V provozu: <b>%1$d</b>d <b>%2$d</b>h <b>%3$d</b>m <b>%4$d</b>s</string>
+
 
     <string name="gps_title">Povolení GPS</string>
     <string name="gps_content">Je potřeba GPS pro funkci této aplikace. Povolte prosím GPS.</string>
     <string name="gps_openSettings">Nastavení</string>
+
+    <string name="settings_text">Nastavení</string>
+    <string name="settings_btnBack">Zpět</string>
+    <string name="settings_update_rate">Rychlost aktualizace (s): </string>
+    <string name="settings_btn_save">Uložit nastavení</string>
+    <string name="settings_saved">Uloženo</string>
+
 </resources>

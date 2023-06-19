@@ -40,6 +40,7 @@
             android:layout_height="wrap_content"
             android:layout_marginEnd="8dp"
             android:text="@string/btn_connect"
+            android:textColor="@color/white"
             app:layout_constraintBottom_toBottomOf="parent"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintTop_toTopOf="parent" />
@@ -54,8 +55,7 @@
         android:layout_marginEnd="8dp"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@+id/connection_layout"
-        tools:visibility="gone">
+        app:layout_constraintTop_toBottomOf="@+id/connection_layout">
 
         <ImageView
             android:id="@+id/led_solar"
@@ -181,8 +181,7 @@
         android:layout_marginEnd="8dp"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@+id/led_layout"
-        tools:visibility="gone">
+        app:layout_constraintTop_toBottomOf="@+id/led_layout">
 
         <TextView
             android:id="@+id/txt_batteryChargedBy"
@@ -218,6 +217,18 @@
             android:textSize="20sp"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintTop_toBottomOf="@+id/txt_batteryTemp" />
+
+        <TextView
+            android:id="@+id/txt_runtime"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:layout_marginEnd="32dp"
+            android:text="@string/runtime"
+            android:textColor="@color/white"
+            android:textSize="20sp"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toBottomOf="@+id/txt_lastUpdate" />
     </androidx.constraintlayout.widget.ConstraintLayout>
 
     <androidx.constraintlayout.widget.ConstraintLayout
@@ -230,8 +241,7 @@
         app:layout_constraintBottom_toTopOf="@+id/txt_firmware"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@+id/status_layout"
-        tools:visibility="visible">
+        app:layout_constraintTop_toBottomOf="@+id/status_layout">
 
 
         <com.github.mikephil.charting.charts.LineChart
@@ -273,8 +283,7 @@
         android:textColorLink="@color/main"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        tools:visibility="gone" />
+        app:layout_constraintStart_toStartOf="parent" />
 
     <ImageView
         android:id="@+id/img_sopr_logo"
@@ -288,5 +297,19 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@+id/connection_layout"
         app:srcCompat="@drawable/round_corners"
+        tools:visibility="gone" />
+
+    <ImageButton
+        android:id="@+id/btn_settings"
+        style="@style/Widget.AppCompat.ImageButton"
+        android:layout_width="64dp"
+        android:layout_height="64dp"
+        android:background="@android:color/transparent"
+        android:contentDescription="Settings"
+        android:scaleType="fitXY"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:srcCompat="@drawable/icon_settings"
         tools:visibility="gone" />
 </androidx.constraintlayout.widget.ConstraintLayout>
