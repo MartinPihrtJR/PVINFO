@@ -37,5 +37,6 @@
     <string name="settings_update_rate">Rychlost aktualizace (s): </string>
     <string name="settings_btn_save">Uložit nastavení</string>
     <string name="settings_saved">Uloženo</string>
+    <string name="settings_enable_autoconnect">Zapamatovat si poslední zařízení: </string>
 
 </resources>

@@ -5,7 +5,9 @@ import android.annotation.SuppressLint
 import android.app.Activity
 import android.app.AlertDialog
 import android.app.Dialog
+import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
+import android.bluetooth.BluetoothManager
 import android.bluetooth.BluetoothSocket
 import android.companion.AssociationRequest
 import android.companion.BluetoothDeviceFilter
@@ -246,6 +248,9 @@ class MainActivity : AppCompatActivity() {
                         try {
                             val uuids = device.uuids
                             deviceUUID = UUID.fromString(uuids[0].uuid.toString())
+                            val deviceAddr = device.address
+                            getSharedPreferences(Constants.SHARED_PREFS_SETTINGS, Context.MODE_PRIVATE).edit().putString(
+                                Constants.SETTINGS_KEY_AUTOCONN_MAC, deviceAddr.toString()).apply()
 
                             deviceName = deviceToPair.name
 
@@ -377,6 +382,103 @@ class MainActivity : AppCompatActivity() {
 
             onDisconnected()
         }
+
+        if (getSharedPreferences(Constants.SHARED_PREFS_SETTINGS, Context.MODE_PRIVATE).getBoolean(Constants.SETTINGS_KEY_ENABLE_AUTOCONNECT, false)){
+            if (getSharedPreferences(Constants.SHARED_PREFS_SETTINGS, Context.MODE_PRIVATE).getString(Constants.SETTINGS_KEY_AUTOCONN_MAC, null) != null){
+
+                try {
+                    val devAddr = getSharedPreferences(Constants.SHARED_PREFS_SETTINGS, Context.MODE_PRIVATE).getString(Constants.SETTINGS_KEY_AUTOCONN_MAC, null)
+                    val deviceToPairWMac: BluetoothDevice = BluetoothAdapter.getDefaultAdapter().getRemoteDevice(devAddr)
+
+                    CoroutineScope(Dispatchers.IO).launch {
+                        // The user chose to pair the app with a Bluetooth device.
+                        val deviceToPair: BluetoothDevice? = deviceToPairWMac
+                        deviceToPair?.let { device ->
+                            runOnUiThread {
+                                Toast.makeText(
+                                    this@MainActivity,
+                                    getString(R.string.connectingTo, device.name),
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
+
+                            device.createBond()
+                            // Maintain continuous interaction with a paired device.
+                            pvDevice = device
+                            lastTime = LocalTime.now()
+                            while (device.bondState != BluetoothDevice.BOND_BONDED) {
+                                val timeNow = LocalTime.now()
+                                if (timeNow.minusSeconds(BT_TIMEOUT).isAfter(lastTime)) {
+                                    runOnUiThread {
+                                        Toast.makeText(
+                                            this@MainActivity,
+                                            getString(R.string.couldNotConnect, device.name),
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    }
+                                    break
+                                }
+                            }
+                            try {
+                                val uuids = device.uuids
+                                deviceUUID = UUID.fromString(uuids[0].uuid.toString())
+                                val deviceAddr = device.address
+                                getSharedPreferences(Constants.SHARED_PREFS_SETTINGS, Context.MODE_PRIVATE).edit().putString(
+                                    Constants.SETTINGS_KEY_AUTOCONN_MAC, deviceAddr.toString()).apply()
+
+                                deviceName = deviceToPair.name
+
+                                dialog.show(supportFragmentManager, "LoadingDialog")
+                                CoroutineScope(Dispatchers.IO).launch{
+                                    btSocket = pvDevice.createRfcommSocketToServiceRecord(deviceUUID)
+                                    Log.d("socket", btSocket.toString())
+                                    kotlin.runCatching {
+                                        btSocket.connect()
+                                    }
+
+                                    while (!btSocket.isConnected) {}
+                                    isSocketConnected = true
+                                }
+
+
+
+                                Log.d("BT", "Connected")
+                                isConnectingToDevice = true
+                            } catch (_: Exception){
+                                runOnUiThread {
+                                    Toast.makeText(
+                                        this@MainActivity,
+                                        getString(R.string.couldNotConnect, device.name),
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                }
+                            }
+
+
+                        }
+
+
+
+
+                        // Process the data as needed
+
+                    }
+                } catch (e: Exception){
+                    Log.d("autoconnect", e.toString())
+                    runOnUiThread {
+                        Toast.makeText(
+                            this@MainActivity,
+                            getString(R.string.couldNotConnect, getSharedPreferences(Constants.SHARED_PREFS_SETTINGS, Context.MODE_PRIVATE).getString(Constants.SETTINGS_KEY_AUTOCONN_MAC, null)),
+                            Toast.LENGTH_SHORT
+                        ).show()
+                    }
+                }
+
+
+
+            }
+        }
+
 
         CoroutineScope(Dispatchers.IO).launch {
             while (true) {

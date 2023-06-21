@@ -37,6 +37,7 @@
     <string name="settings_update_rate">Update rate (s): </string>
     <string name="settings_btn_save">Save settings</string>
     <string name="settings_saved">Saved.</string>
+    <string name="settings_enable_autoconnect">Remember last device and try to autoconnect: </string>
 
 
     <string name="fw_version">Firmware version %1$s       pihrt.com</string>

@@ -3,6 +3,12 @@
     <style name="Base.Theme.PVINFO" parent="Theme.Material3.DayNight.NoActionBar">
         <!-- Customize your dark theme here. -->
         <item name="colorPrimary">@color/main</item>
-        <item name="colorSecondary">@color/background</item>
+        <item name="colorSecondary">@color/accent</item>
+    </style>
+
+    <style name="Theme.PVINFO" parent="Base.Theme.PVINFO" />
+
+    <style name="Button" parent="Widget.Material3.Button">
+        <item name="backgroundTint"> @color/accent</item>
     </style>
 </resources>
