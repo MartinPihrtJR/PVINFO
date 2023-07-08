@@ -38,5 +38,6 @@
     <string name="settings_btn_save">Uložit nastavení</string>
     <string name="settings_saved">Uloženo</string>
     <string name="settings_enable_autoconnect">Zapamatovat si poslední zařízení: </string>
+    <string name="settings_cantBeLessThan">Hodnota %1$s nemůže být menší než %2$d</string>
 
 </resources>

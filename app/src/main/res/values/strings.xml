@@ -38,6 +38,7 @@
     <string name="settings_btn_save">Save settings</string>
     <string name="settings_saved">Saved.</string>
     <string name="settings_enable_autoconnect">Remember last device and try to autoconnect: </string>
+    <string name="settings_cantBeLessThan">Value %1$s can\'t be less than %2$d</string>
 
 
     <string name="fw_version">Firmware version %1$s       pihrt.com</string>

@@ -16,7 +16,6 @@ import android.content.Context
 import android.content.DialogInterface
 import android.content.Intent
 import android.content.IntentSender
-import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.location.LocationManager
 import android.net.Uri
@@ -40,7 +39,6 @@ import androidx.core.content.ContextCompat
 import androidx.fragment.app.DialogFragment
 import com.github.mikephil.charting.charts.LineChart
 import com.github.mikephil.charting.components.MarkerView
-import com.github.mikephil.charting.components.YAxis
 import com.github.mikephil.charting.data.Entry
 import com.github.mikephil.charting.data.LineData
 import com.github.mikephil.charting.data.LineDataSet
@@ -52,18 +50,14 @@ import cz.pihrtm.sopr.datatype.Constants
 import cz.pihrtm.sopr.datatype.SolarInfo
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import org.w3c.dom.Text
-import java.io.BufferedReader
-import java.io.IOException
 import java.io.InputStream
-import java.io.InputStreamReader
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
-import java.util.Dictionary
 import java.util.UUID
-import kotlin.math.roundToInt
 
 
 class LoadingDialogFragment : DialogFragment() {
@@ -75,16 +69,19 @@ class LoadingDialogFragment : DialogFragment() {
 }
 
 
-
 class MainActivity : AppCompatActivity() {
 
     private var SELECT_DEVICE_REQUEST_CODE = 0
     private val REQUEST_BLUETOOTH_CONNECT_PERMISSION = 136548
-    private val BT_TIMEOUT = 7L
+    private val BT_TIMEOUT = 10000
+    private val BT_SOCKET_TIMEOUT = 20000
+    private val BT_SOCKET_WHILE_TIMEOUT = 5000
     private val BT_READ_TIMEOUT = 15L
+    private val BT_TIMEOUT_S = 10L
 
     private var isConnectedToDevice = false
     private var isConnectingToDevice = false
+    private var isConnectingToSocket = false
     private var deviceName: String = "Not connected"
     private lateinit var pvDevice: BluetoothDevice
     private lateinit var deviceUUID: UUID
@@ -96,7 +93,7 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var pageData: SolarInfo
 
-    private var lastTime: LocalTime = LocalTime.now()
+    private var lastTime = System.currentTimeMillis()
 
     private lateinit var deviceManager: CompanionDeviceManager
 
@@ -125,19 +122,17 @@ class MainActivity : AppCompatActivity() {
     private lateinit var txtRuntime: TextView
 
 
-
     private lateinit var deviceFoundLauncher: ActivityResultLauncher<IntentSenderRequest>
 
 
-
-    class CustomMarkerView(context: Context, layoutResource: Int) : MarkerView(context, layoutResource) {
+    class CustomMarkerView(context: Context, layoutResource: Int) :
+        MarkerView(context, layoutResource) {
         // Set the value text
         fun setValueText(value: String) {
             val tvValue: TextView = findViewById(R.id.tvValue)
             tvValue.text = value
         }
     }
-
 
 
     @SuppressLint("MissingPermission")
@@ -171,16 +166,26 @@ class MainActivity : AppCompatActivity() {
         btnSettings = findViewById(R.id.btn_settings)
         txtRuntime = findViewById(R.id.txt_runtime)
 
-        val graphs = listOf(graphBattery, graphSolar,graphSource)
+        val graphs = listOf(graphBattery, graphSolar, graphSource)
 
-        for(graph in graphs){
 
-            val graphTopOffset =    60f
-            val graphLeftOffset =   60f
-            val graphRightOffset =  60f
-            val graphBottomOffset = 60f
+        dialog = LoadingDialogFragment()
+        dialog.isCancelable = false
 
-            graph.setViewPortOffsets(graphLeftOffset, graphTopOffset, graphRightOffset, graphBottomOffset)
+        for (graph in graphs) {
+
+            val graphTopOffset = 15f
+            val graphLeftOffset = 15f
+            val graphRightOffset = 15f
+            val graphBottomOffset = 0f
+
+            graph.setExtraOffsets(
+                graphLeftOffset,
+                graphTopOffset,
+                graphRightOffset,
+                graphBottomOffset
+            )
+
 
             graph.setPinchZoom(true)
             graph.legend.textColor = getColor(R.color.white)
@@ -208,103 +213,334 @@ class MainActivity : AppCompatActivity() {
                     markerView.visibility = View.GONE
                 }
             })
-        }
 
-        deviceFoundLauncher = registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
-            // Handle the result here
-            CoroutineScope(Dispatchers.IO).launch {
-                if (result.resultCode == Activity.RESULT_OK) {
-                    // Result is OK
-                    val data: Intent? = result.data
-                    // The user chose to pair the app with a Bluetooth device.
-                    val deviceToPair: BluetoothDevice? =
-                        data?.getParcelableExtra(CompanionDeviceManager.EXTRA_DEVICE)
-                    deviceToPair?.let { device ->
-                        runOnUiThread {
-                            Toast.makeText(
-                                this@MainActivity,
-                                getString(R.string.connectingTo, device.name),
-                                Toast.LENGTH_SHORT
-                            ).show()
-                        }
-
-                        device.createBond()
-                        // Maintain continuous interaction with a paired device.
-                        pvDevice = device
-                        lastTime = LocalTime.now()
-                        while (device.bondState != BluetoothDevice.BOND_BONDED) {
-                            val timeNow = LocalTime.now()
-                            if (timeNow.minusSeconds(BT_TIMEOUT).isAfter(lastTime)) {
-                                runOnUiThread {
-                                    Toast.makeText(
-                                        this@MainActivity,
-                                        getString(R.string.couldNotConnect, device.name),
-                                        Toast.LENGTH_SHORT
-                                    ).show()
-                                }
-                                break
-                            }
-                        }
-                        try {
-                            val uuids = device.uuids
-                            deviceUUID = UUID.fromString(uuids[0].uuid.toString())
-                            val deviceAddr = device.address
-                            getSharedPreferences(Constants.SHARED_PREFS_SETTINGS, Context.MODE_PRIVATE).edit().putString(
-                                Constants.SETTINGS_KEY_AUTOCONN_MAC, deviceAddr.toString()).apply()
-
-                            deviceName = deviceToPair.name
-
-                            dialog.show(supportFragmentManager, "LoadingDialog")
-                            CoroutineScope(Dispatchers.IO).launch{
-                                btSocket = pvDevice.createRfcommSocketToServiceRecord(deviceUUID)
-                                Log.d("socket", btSocket.toString())
-                                kotlin.runCatching {
-                                    btSocket.connect()
-                                }
-
-                                while (!btSocket.isConnected) {}
-                                isSocketConnected = true
-                            }
-
-
-
-                            Log.d("BT", "Connected")
-                            isConnectingToDevice = true
-                        } catch (_: Exception){
-                            runOnUiThread {
-                                Toast.makeText(
-                                    this@MainActivity,
-                                    getString(R.string.couldNotConnect, device.name),
-                                    Toast.LENGTH_SHORT
-                                ).show()
-                            }
-                        }
-
-
+            graph.xAxis.valueFormatter = object : ValueFormatter() {
+                override fun getFormattedValue(value: Float): String {
+                    // Return your custom label based on the provided value
+                    return if ((value % 1) == 0f) {// number does not have fractional part
+                        LocalTime.now().minusMinutes((9 - value.toInt()).toLong() * 30L).format(
+                            DateTimeFormatter.ofPattern("HH:mm")
+                        )
+                    } else {
+                        ""
                     }
 
-
-
-
-                    // Process the data as needed
-                } else {
-                    // Result is not OK
-                    runOnUiThread {
-                        Toast.makeText(
-                            this@MainActivity,
-                            R.string.youNeedToConnect,
-                            Toast.LENGTH_LONG
-                        ).show()
-                    }
                 }
             }
 
         }
 
+        deviceFoundLauncher =
+            registerForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
+                // Handle the result here
+                Log.d("Connect", "Connecting started")
+                val startTime = System.currentTimeMillis()
+                var socketStartTime: Long? = 0
+                var socketJob: Job? = null
 
 
-        dialog = LoadingDialogFragment()
-        dialog.isCancelable = false
+                val job = CoroutineScope(Dispatchers.IO).launch {
+                    try {
+                        if (result.resultCode == Activity.RESULT_OK) {
+                            // Result is OK
+                            val data: Intent? = result.data
+                            // The user chose to pair the app with a Bluetooth device.
+                            val deviceToPair: BluetoothDevice? =
+                                data?.getParcelableExtra(CompanionDeviceManager.EXTRA_DEVICE)
+                            deviceToPair?.let { device ->
+                                runOnUiThread {
+                                    Toast.makeText(
+                                        this@MainActivity,
+                                        getString(R.string.connectingTo, device.name),
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                }
+
+                                device.createBond()
+                                // Maintain continuous interaction with a paired device.
+                                pvDevice = device
+                                lastTime = System.currentTimeMillis()
+                                Log.d("Connect", "Wait for bonding")
+                                while (device.bondState != BluetoothDevice.BOND_BONDED) {
+
+                                }
+                                Log.d("Connect", "Bonded")
+                                try {
+                                    val uuids = device.uuids
+                                    deviceUUID = UUID.fromString(uuids[0].uuid.toString())
+                                    val deviceAddr = device.address
+                                    getSharedPreferences(
+                                        Constants.SHARED_PREFS_SETTINGS,
+                                        Context.MODE_PRIVATE
+                                    ).edit().putString(
+                                        Constants.SETTINGS_KEY_AUTOCONN_MAC, deviceAddr.toString()
+                                    ).apply()
+
+                                    deviceName = deviceToPair.name
+
+                                    dialog.show(supportFragmentManager, "LoadingDialog")
+                                    Log.d("Connect", "Start loading dialog and socket")
+                                    socketStartTime = System.currentTimeMillis()
+                                    socketJob = CoroutineScope(Dispatchers.IO).launch {
+                                        btSocket =
+                                            pvDevice.createRfcommSocketToServiceRecord(deviceUUID)
+                                        Log.d("socket", btSocket.toString())
+                                        try {
+                                            btSocket.connect()
+                                        } catch (e: Exception) {
+                                            Log.d(
+                                                "socket",
+                                                "Error while connecting to socket, try 1 : $e"
+                                            )
+                                            delay(2000)
+                                            try {
+                                                btSocket.connect()
+                                            } catch (e: Exception) {
+                                                Log.d(
+                                                    "socket",
+                                                    "Error while connecting to socket, try 2 : $e"
+                                                )
+                                                delay(2000)
+                                                try {
+                                                    btSocket.connect()
+                                                } catch (e: Exception) {
+                                                    Log.d(
+                                                        "socket",
+                                                        "Error while connecting to socket, try 3 : $e"
+                                                    )
+
+                                                }
+                                            }
+                                        }
+                                        Log.d("Connect", "Wait for btsocket to connect")
+                                        val socketTimerStartTime = System.currentTimeMillis()
+                                        var timerResult = true
+                                        while (!btSocket.isConnected) {
+                                            val currentSocketTime = System.currentTimeMillis()
+                                            if (currentSocketTime - BT_SOCKET_WHILE_TIMEOUT > socketTimerStartTime) {
+                                                timerResult = false
+                                                Log.d("Connect", "socket timed out")
+                                                break
+                                            }
+                                            Log.d(
+                                                "socketConn",
+                                                "connecting to socket, waiting for connection $currentSocketTime"
+                                            )
+                                            delay(500)
+                                        }
+                                        Log.d("Connect", "While loop for socket timeout ended")
+                                        if (timerResult) {
+                                            isSocketConnected = true
+                                            isConnectingToSocket = false
+                                            isConnectedToDevice = true
+                                            runOnUiThread {
+                                                try {
+                                                    dialog.dismiss()
+                                                } catch (e: Exception) {
+
+                                                }
+                                            }
+                                            Log.d("Connect", "Autoconnect success")
+                                        } else {
+                                            Log.d("Connect", "Autoconnect failure")
+                                            isSocketConnected = false
+                                            isConnectingToSocket = false
+                                            isConnectedToDevice = false
+                                            runOnUiThread {
+                                                onDisconnected()
+                                            }
+
+                                            Log.d("socket", "socket did not successfully connect")
+
+                                            runOnUiThread {
+                                                try {
+                                                    dialog.dismiss()
+                                                } catch (e: Exception) {
+
+                                                }
+                                                val builder = AlertDialog.Builder(this@MainActivity)
+
+                                                builder.setMessage(R.string.conn_timeout)
+                                                    .setCancelable(false)
+                                                    .setPositiveButton(R.string.closeDialog) { dialog, _ ->
+                                                        dialog.dismiss()
+                                                    }
+
+                                                val alert = builder.create()
+                                                alert.show()
+                                            }
+                                        }
+
+                                    }
+
+
+
+                                    Log.d("BT", "Device connected, socket connecting")
+                                    isConnectingToSocket = true
+                                    isConnectingToDevice = true
+
+                                } catch (_: Exception) {
+                                    runOnUiThread {
+                                        Toast.makeText(
+                                            this@MainActivity,
+                                            getString(R.string.couldNotConnect, device.name),
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    }
+                                    try {
+                                        this@MainActivity.dialog.dialog?.dismiss()
+                                    } catch (e: Exception) {
+                                        Log.d("Dialog", "dismiss Err: $e")
+                                    }
+                                }
+
+
+                            }
+
+
+                            // Process the data as needed
+                        } else {
+                            // Result is not OK
+                            runOnUiThread {
+                                Toast.makeText(
+                                    this@MainActivity,
+                                    R.string.youNeedToConnect,
+                                    Toast.LENGTH_LONG
+                                ).show()
+                                try {
+                                    this@MainActivity.dialog.dialog?.dismiss()
+                                } catch (e: Exception) {
+                                    Log.d("Dialog", "dismiss Err: $e")
+                                }
+                            }
+
+                        }
+
+                    } finally {
+                        if (!isConnectingToDevice) {
+                            runOnUiThread {
+                                Toast.makeText(
+                                    this@MainActivity,
+                                    getString(R.string.conn_timeout),
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        }
+
+                    }
+                }
+
+                CoroutineScope(Dispatchers.Default).launch {
+                    while (job.isActive) {
+                        val currTime = System.currentTimeMillis()
+                        if (currTime - BT_TIMEOUT > startTime) {
+                            job.cancel()
+                            Log.d("job", "cancelling job")
+                            try {
+                                this@MainActivity.dialog.dialog?.dismiss()
+                            } catch (e: Exception) {
+                                Log.d("Dialog", "dismiss Err: $e")
+                            }
+                        }
+
+
+
+                        try {
+                            while (socketJob!!.isActive) {
+                                if (currTime - BT_SOCKET_TIMEOUT > socketStartTime!!) {
+                                    socketJob!!.cancel()
+                                    Log.d("socketJob", "cancelling job")
+
+                                    try {
+                                        this@MainActivity.dialog.dialog?.dismiss()
+                                    } catch (e: Exception) {
+                                        Log.d("Dialog", "dismiss Err: $e")
+                                    }
+
+                                }
+
+                            }
+                        } catch (e: Exception) {
+                            Log.d(
+                                "socketJob",
+                                "socket job not initialized, probably no device selected."
+                            )
+
+                        }
+                    }
+
+                    try {
+                        while (socketJob!!.isActive) {
+                            val currTime = System.currentTimeMillis()
+                            if (currTime - BT_SOCKET_TIMEOUT > socketStartTime!!) {
+                                socketJob!!.cancel()
+                                Log.d("socketJob", "cancelling job")
+                                try {
+                                    this@MainActivity.dialog.dialog?.dismiss()
+                                } catch (e: Exception) {
+                                    Log.d("Dialog", "dismiss Err: $e")
+                                }
+                                runOnUiThread {
+                                    try {
+                                        dialog.dismiss()
+                                    } catch (e: Exception) {
+
+                                    }
+                                    val builder = AlertDialog.Builder(this@MainActivity)
+
+                                    builder.setMessage(R.string.conn_timeout)
+                                        .setCancelable(false)
+                                        .setPositiveButton(R.string.closeDialog) { dialog, _ ->
+                                            dialog.dismiss()
+                                        }
+
+                                    val alert = builder.create()
+                                    alert.show()
+                                }
+
+
+                            }
+
+                        }
+                    } catch (e: Exception) {
+                        Log.d(
+                            "socketJob",
+                            "socket job not initialized, probably no device selected."
+                        )
+                        try {
+                            this@MainActivity.dialog.dialog?.dismiss()
+                        } catch (e: Exception) {
+                            Log.d("Dialog", "dismiss Err: $e")
+                        }
+                        runOnUiThread {
+                            try {
+                                dialog.dismiss()
+                            } catch (e: Exception) {
+
+                            }
+                            val builder = AlertDialog.Builder(this@MainActivity)
+
+                            builder.setMessage(R.string.conn_timeout)
+                                .setCancelable(false)
+                                .setPositiveButton(R.string.closeDialog) { dialog, _ ->
+                                    dialog.dismiss()
+                                }
+
+                            val alert = builder.create()
+                            alert.show()
+                        }
+
+                    }
+
+
+                }
+
+
+            }
+
+
+
+
 
 
 
@@ -347,21 +583,25 @@ class MainActivity : AppCompatActivity() {
 
         btnConnect.setOnClickListener {
             try {
-                if (btSocket.isConnected){
+                if (btSocket.isConnected) {
                     btSocket.close()
                 }
-            }catch (e: Exception){
+            } catch (e: Exception) {
                 Log.d("del Socket", e.toString())
             }
 
             if (!isConnectedToDevice) {
+                Log.d("ConnectStart", "Start")
 
-                deviceManager.associate(pairingRequest,
+                deviceManager.associate(
+                    pairingRequest,
                     object : CompanionDeviceManager.Callback() {
                         // Called when a device is found. Launch the IntentSender so the user
                         // can select the device they want to pair with.
                         override fun onDeviceFound(chooserLauncher: IntentSender) {
-                            val intentSenderRequest = IntentSenderRequest.Builder(chooserLauncher).setFillInIntent(null).build()
+                            val intentSenderRequest =
+                                IntentSenderRequest.Builder(chooserLauncher).setFillInIntent(null)
+                                    .build()
                             deviceFoundLauncher.launch(intentSenderRequest)
                             /*startIntentSenderForResult(
                                 chooserLauncher,
@@ -383,32 +623,173 @@ class MainActivity : AppCompatActivity() {
             onDisconnected()
         }
 
-        if (getSharedPreferences(Constants.SHARED_PREFS_SETTINGS, Context.MODE_PRIVATE).getBoolean(Constants.SETTINGS_KEY_ENABLE_AUTOCONNECT, false)){
-            if (getSharedPreferences(Constants.SHARED_PREFS_SETTINGS, Context.MODE_PRIVATE).getString(Constants.SETTINGS_KEY_AUTOCONN_MAC, null) != null){
+        if (getSharedPreferences(Constants.SHARED_PREFS_SETTINGS, Context.MODE_PRIVATE).getBoolean(
+                Constants.SETTINGS_KEY_ENABLE_AUTOCONNECT,
+                false
+            )
+        ) {
+            if (getSharedPreferences(
+                    Constants.SHARED_PREFS_SETTINGS,
+                    Context.MODE_PRIVATE
+                ).getString(Constants.SETTINGS_KEY_AUTOCONN_MAC, null) != null
+            ) {
 
-                try {
-                    val devAddr = getSharedPreferences(Constants.SHARED_PREFS_SETTINGS, Context.MODE_PRIVATE).getString(Constants.SETTINGS_KEY_AUTOCONN_MAC, null)
-                    val deviceToPairWMac: BluetoothDevice = BluetoothAdapter.getDefaultAdapter().getRemoteDevice(devAddr)
+                Log.d("Connect", "Connecting started")
+                val startTime = System.currentTimeMillis()
+                var socketStartTime: Long? = 0
+                var socketJob: Job? = null
 
-                    CoroutineScope(Dispatchers.IO).launch {
-                        // The user chose to pair the app with a Bluetooth device.
-                        val deviceToPair: BluetoothDevice? = deviceToPairWMac
-                        deviceToPair?.let { device ->
-                            runOnUiThread {
-                                Toast.makeText(
-                                    this@MainActivity,
-                                    getString(R.string.connectingTo, device.name),
-                                    Toast.LENGTH_SHORT
-                                ).show()
-                            }
 
-                            device.createBond()
-                            // Maintain continuous interaction with a paired device.
-                            pvDevice = device
-                            lastTime = LocalTime.now()
-                            while (device.bondState != BluetoothDevice.BOND_BONDED) {
-                                val timeNow = LocalTime.now()
-                                if (timeNow.minusSeconds(BT_TIMEOUT).isAfter(lastTime)) {
+                val job = CoroutineScope(Dispatchers.IO).launch {
+                    try {
+
+                        // Result is OK
+                        val devAddr = getSharedPreferences(
+                            Constants.SHARED_PREFS_SETTINGS,
+                            Context.MODE_PRIVATE
+                        ).getString(Constants.SETTINGS_KEY_AUTOCONN_MAC, null)
+                        val bluetoothManager: BluetoothManager =
+                            getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
+                        val bluetoothAdapter: BluetoothAdapter? = bluetoothManager.adapter
+                        val pairedDevices: Set<BluetoothDevice>? = bluetoothAdapter?.bondedDevices
+
+                        val desiredDevice: BluetoothDevice? =
+                            pairedDevices?.find { it.address == devAddr }
+
+
+                        try {
+                            val deviceToPair: BluetoothDevice? = desiredDevice
+                            deviceToPair?.let { device ->
+                                runOnUiThread {
+                                    Toast.makeText(
+                                        this@MainActivity,
+                                        getString(R.string.connectingTo, device.name),
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                }
+
+                                device.createBond()
+                                // Maintain continuous interaction with a paired device.
+                                pvDevice = device
+                                lastTime = System.currentTimeMillis()
+                                Log.d("Connect", "Wait for bonding")
+                                while (device.bondState != BluetoothDevice.BOND_BONDED) {
+
+                                }
+                                Log.d("Connect", "Bonded")
+                                try {
+                                    val uuids = device.uuids
+                                    deviceUUID = UUID.fromString(uuids[0].uuid.toString())
+                                    val deviceAddr = device.address
+                                    getSharedPreferences(
+                                        Constants.SHARED_PREFS_SETTINGS,
+                                        Context.MODE_PRIVATE
+                                    ).edit().putString(
+                                        Constants.SETTINGS_KEY_AUTOCONN_MAC, deviceAddr.toString()
+                                    ).apply()
+
+                                    deviceName = deviceToPair.name
+
+                                    dialog.show(supportFragmentManager, "LoadingDialog")
+                                    Log.d("Connect", "Start loading dialog and socket")
+                                    socketStartTime = System.currentTimeMillis()
+                                    socketJob = CoroutineScope(Dispatchers.IO).launch {
+                                        btSocket =
+                                            pvDevice.createRfcommSocketToServiceRecord(deviceUUID)
+                                        Log.d("socket", btSocket.toString())
+                                        try {
+                                            btSocket.connect()
+                                        } catch (e: Exception) {
+                                            Log.d(
+                                                "socket",
+                                                "Error while connecting to socket, try 1 : $e"
+                                            )
+                                            delay(2000)
+                                            try {
+                                                btSocket.connect()
+                                            } catch (e: Exception) {
+                                                Log.d(
+                                                    "socket",
+                                                    "Error while connecting to socket, try 2 : $e"
+                                                )
+                                                delay(2000)
+                                                try {
+                                                    btSocket.connect()
+                                                } catch (e: Exception) {
+                                                    Log.d(
+                                                        "socket",
+                                                        "Error while connecting to socket, try 3 : $e"
+                                                    )
+
+                                                }
+                                            }
+                                        }
+                                        Log.d("Connect", "Wait for btsocket to connect")
+                                        val socketTimerStartTime = System.currentTimeMillis()
+                                        var timerResult = true
+                                        while (!btSocket.isConnected) {
+                                            val currentSocketTime = System.currentTimeMillis()
+                                            if (currentSocketTime - BT_SOCKET_WHILE_TIMEOUT > socketTimerStartTime) {
+                                                timerResult = false
+                                                break
+                                            }
+                                            Log.d(
+                                                "socketConn",
+                                                "connecting to socket, waiting for connection $currentSocketTime"
+                                            )
+                                        }
+                                        Log.d("Connect", "While loop for socket timeout ended")
+                                        if (timerResult) {
+                                            isSocketConnected = true
+                                            isConnectingToSocket = false
+                                            isConnectedToDevice = true
+                                            runOnUiThread {
+                                                try {
+                                                    dialog.dismiss()
+                                                } catch (e: Exception) {
+
+                                                }
+                                            }
+                                            Log.d("Connect", "Autoconnect success")
+                                        } else {
+                                            Log.d("Connect", "Autoconnect failure")
+                                            isSocketConnected = false
+                                            isConnectingToSocket = false
+                                            isConnectedToDevice = false
+                                            runOnUiThread {
+                                                onDisconnected()
+                                            }
+
+                                            Log.d("socket", "socket did not successfully connect")
+
+                                            runOnUiThread {
+                                                try {
+                                                    dialog.dismiss()
+                                                } catch (e: Exception) {
+
+                                                }
+                                                val builder = AlertDialog.Builder(this@MainActivity)
+
+                                                builder.setMessage(R.string.conn_timeout)
+                                                    .setCancelable(false)
+                                                    .setPositiveButton(R.string.closeDialog) { dialog, _ ->
+                                                        dialog.dismiss()
+                                                    }
+
+                                                val alert = builder.create()
+                                                alert.show()
+                                            }
+                                        }
+
+                                    }
+
+
+
+                                    Log.d("BT", "Device connected, socket connecting")
+                                    isConnectingToSocket = true
+                                    isConnectingToDevice = true
+
+                                } catch (_: Exception) {
                                     runOnUiThread {
                                         Toast.makeText(
                                             this@MainActivity,
@@ -416,186 +797,75 @@ class MainActivity : AppCompatActivity() {
                                             Toast.LENGTH_SHORT
                                         ).show()
                                     }
-                                    break
-                                }
-                            }
-                            try {
-                                val uuids = device.uuids
-                                deviceUUID = UUID.fromString(uuids[0].uuid.toString())
-                                val deviceAddr = device.address
-                                getSharedPreferences(Constants.SHARED_PREFS_SETTINGS, Context.MODE_PRIVATE).edit().putString(
-                                    Constants.SETTINGS_KEY_AUTOCONN_MAC, deviceAddr.toString()).apply()
-
-                                deviceName = deviceToPair.name
-
-                                dialog.show(supportFragmentManager, "LoadingDialog")
-                                CoroutineScope(Dispatchers.IO).launch{
-                                    btSocket = pvDevice.createRfcommSocketToServiceRecord(deviceUUID)
-                                    Log.d("socket", btSocket.toString())
-                                    kotlin.runCatching {
-                                        btSocket.connect()
+                                    try {
+                                        this@MainActivity.dialog.dialog?.dismiss()
+                                    } catch (e: Exception) {
+                                        Log.d("Dialog", "dismiss Err: $e")
                                     }
-
-                                    while (!btSocket.isConnected) {}
-                                    isSocketConnected = true
                                 }
 
 
-
-                                Log.d("BT", "Connected")
-                                isConnectingToDevice = true
-                            } catch (_: Exception){
-                                runOnUiThread {
-                                    Toast.makeText(
-                                        this@MainActivity,
-                                        getString(R.string.couldNotConnect, device.name),
-                                        Toast.LENGTH_SHORT
-                                    ).show()
-                                }
                             }
 
-
+                        } catch (e: Exception) {
+                            runOnUiThread {
+                                Toast.makeText(
+                                    this@MainActivity,
+                                    getString(R.string.couldNotConnect, desiredDevice!!.name),
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                            Log.d("autoconnect", e.toString())
                         }
-
-
-
-
                         // Process the data as needed
 
-                    }
-                } catch (e: Exception){
-                    Log.d("autoconnect", e.toString())
-                    runOnUiThread {
-                        Toast.makeText(
-                            this@MainActivity,
-                            getString(R.string.couldNotConnect, getSharedPreferences(Constants.SHARED_PREFS_SETTINGS, Context.MODE_PRIVATE).getString(Constants.SETTINGS_KEY_AUTOCONN_MAC, null)),
-                            Toast.LENGTH_SHORT
-                        ).show()
+
+                    } finally {
+                        if (!isConnectingToDevice) {
+                            runOnUiThread {
+                                Toast.makeText(
+                                    this@MainActivity,
+                                    getString(R.string.conn_timeout),
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        }
+
                     }
                 }
 
-
-
-            }
-        }
-
-
-        CoroutineScope(Dispatchers.IO).launch {
-            while (true) {
-
-
-
-                    if (isConnectingToDevice) {
-
-                        if (isSocketConnected) {
-                            val outStream = btSocket.outputStream
-                            val inStream = btSocket.inputStream
-                            outStream.write('?'.code)
-                            outStream.flush()
-                            delay(1500)
-                            val bufferString = readUntilChar(inStream, 'R') + "R"
-                            val isDevice = bufferString.contains("SOPR")
-                            Log.d("buffSTR", bufferString)
-                            if (!isDevice || bufferString.contains("timeout")) {
-                                dialog.dismiss()
-                                isConnectingToDevice = false
-                                runOnUiThread {
-                                    try {
-                                        btSocket.close()
-                                    } catch (e: Exception){
-                                        Log.d("Socket ERR", e.toString())
-                                    }
-
-                                    onDisconnected()
-                                    val builder = AlertDialog.Builder(this@MainActivity)
-
-                                    builder.setMessage(R.string.conn_timeout)
-                                        .setCancelable(false)
-                                        .setPositiveButton(R.string.closeDialog) { dialog, _ ->
-                                            dialog.dismiss()
-                                        }
-
-                                    val alert = builder.create()
-                                    alert.show()
-
-
-                                }
-                            } else {
-                                isConnectingToDevice = false
-                                isConnectedToDevice = true
-
-                            }
-
-                            Log.d("STRING", bufferString.toString())
-
-                        }
-                    } else if (isConnectedToDevice) {
-                        if (isSocketConnected) {
-
-
-                            val currentTime = LocalTime.now()
-
+                CoroutineScope(Dispatchers.Default).launch {
+                    while (job.isActive) {
+                        val currTime = System.currentTimeMillis()
+                        if (currTime - BT_TIMEOUT > startTime) {
+                            job.cancel()
+                            Log.d("job", "cancelling job")
                             try {
-                                // Read from the InputStream
-                                val stream = btSocket.inputStream
-                                val outputStream = btSocket.outputStream
-
-                                outputStream.write('J'.code)
-                                outputStream.flush()
-
-                                readUntilChar(stream, '{')
-                                val jsonSb = StringBuilder(10000)
-                                jsonSb.append("{")
-                                jsonSb.append( readUntilChar(stream, '}') )
-                                jsonSb.append("}")
-
-                                //replace everything before {
-                                var indexOfDesiredChar = jsonSb.indexOf("{")
-
-                                if (indexOfDesiredChar != -1) {
-                                    // Replace the portion of the string before the desired character with an empty string
-                                    jsonSb.replace(0, indexOfDesiredChar, "")
-                                }
-
-                                //replace everything after }, should end up with isolated JSON
-                                indexOfDesiredChar = jsonSb.indexOf("}")
-                                if (indexOfDesiredChar != -1) {
-                                    // Replace the portion of the string before the desired character with an empty string
-                                    jsonSb.replace(indexOfDesiredChar + 1, jsonSb.length, "")
-                                }
-
-
-                                val jsonString = jsonSb.toString()
+                                this@MainActivity.dialog.dialog?.dismiss()
+                            } catch (e: Exception) {
+                                Log.d("Dialog", "dismiss Err: $e")
+                            }
+                        }
 
 
 
-                                Log.d("JSONString", jsonString)
-                                var jsonDecoded = SolarInfo()
-                                if (jsonString.startsWith('{') && jsonString.endsWith('}')) {
-                                    lastTime = currentTime
-                                    dialog.dismiss()
-                                    pageData.lastUpdated = currentTime
-                                }
+                        try {
+                            while (socketJob!!.isActive) {
+                                if (currTime - BT_SOCKET_TIMEOUT > socketStartTime!!) {
+                                    socketJob!!.cancel()
+                                    Log.d("socketJob", "cancelling job")
 
-                                try {
-                                    jsonDecoded = Gson().fromJson(jsonString, SolarInfo::class.java)
+                                    try {
+                                        this@MainActivity.dialog.dialog?.dismiss()
+                                    } catch (e: Exception) {
+                                        Log.d("Dialog", "dismiss Err: $e")
+                                    }
+                                    runOnUiThread {
+                                        try {
+                                            dialog.dismiss()
+                                        } catch (e: Exception) {
 
-                                } catch (e: Exception) {
-                                    Log.d("GSON_E", e.toString())
-                                }
-
-
-                                Log.d("JSON", jsonDecoded.toString())
-
-                                pageData = jsonDecoded
-
-                                runOnUiThread {
-                                    val diff = currentTime.minusSeconds(BT_TIMEOUT)
-                                    if (diff.isAfter(lastTime)) {
-                                        isConnectedToDevice = false
-                                        btSocket.close()
-                                        onDisconnected()
-                                        dialog.dismiss()
+                                        }
                                         val builder = AlertDialog.Builder(this@MainActivity)
 
                                         builder.setMessage(R.string.conn_timeout)
@@ -606,41 +876,433 @@ class MainActivity : AppCompatActivity() {
 
                                         val alert = builder.create()
                                         alert.show()
-
-
-                                    }
-
-
-
-                                }
-
-                                if (jsonString.startsWith('{') && jsonString.endsWith('}')) {
-                                    runOnUiThread {
-                                        onConnected()
                                     }
                                 }
 
+                            }
+                        } catch (e: Exception) {
+                            Log.d(
+                                "socketJob",
+                                "socket job not initialized, probably no device selected."
+                            )
 
-                            } catch (e: Exception) {
-                                Log.d("ERR", e.toString())
-                                // Start the service over to restart listening mode
+                        }
+                    }
+
+                    try {
+                        while (socketJob!!.isActive) {
+                            val currTime = System.currentTimeMillis()
+                            if (currTime - BT_SOCKET_TIMEOUT > socketStartTime!!) {
+                                socketJob!!.cancel()
+                                Log.d("socketJob", "cancelling job")
+                                try {
+                                    this@MainActivity.dialog.dialog?.dismiss()
+                                } catch (e: Exception) {
+                                    Log.d("Dialog", "dismiss Err: $e")
+                                }
+
+                                runOnUiThread {
+                                    try {
+                                        dialog.dismiss()
+                                    } catch (e: Exception) {
+
+                                    }
+                                    val builder = AlertDialog.Builder(this@MainActivity)
+
+                                    builder.setMessage(R.string.conn_timeout)
+                                        .setCancelable(false)
+                                        .setPositiveButton(R.string.closeDialog) { dialog, _ ->
+                                            dialog.dismiss()
+                                        }
+
+                                    val alert = builder.create()
+                                    alert.show()
+                                }
+
 
                             }
 
                         }
-
-
-                    } else {
-                        runOnUiThread {
-                            onDisconnected()
+                    } catch (e: Exception) {
+                        Log.d(
+                            "socketJob",
+                            "socket job not initialized, probably no device selected."
+                        )
+                        try {
+                            this@MainActivity.dialog.dialog?.dismiss()
+                        } catch (e: Exception) {
+                            Log.d("Dialog", "dismiss Err: $e")
                         }
                     }
 
-                    val delay = 1000 * getSharedPreferences(Constants.SHARED_PREFS_SETTINGS, Context.MODE_PRIVATE).getInt(Constants.SETTINGS_KEY_REFRESHSECS, 3)
-                    delay(delay.toLong())
+
                 }
+
+                /*
+                                val startTime = System.currentTimeMillis()
+                                val job = CoroutineScope(Dispatchers.IO).launch {
+                                    try {
+                                        // The user chose to pair the app with a Bluetooth device.
+                                        val devAddr = getSharedPreferences(
+                                            Constants.SHARED_PREFS_SETTINGS,
+                                            Context.MODE_PRIVATE
+                                        ).getString(Constants.SETTINGS_KEY_AUTOCONN_MAC, null)
+                                        val deviceToPairWMac: BluetoothDevice =
+                                            BluetoothAdapter.getDefaultAdapter().getRemoteDevice(devAddr)
+
+                                        val deviceToPair: BluetoothDevice? = deviceToPairWMac
+                                        deviceToPair?.let { device ->
+                                            runOnUiThread {
+                                                Toast.makeText(
+                                                    this@MainActivity,
+                                                    getString(R.string.connectingTo, device.name),
+                                                    Toast.LENGTH_SHORT
+                                                ).show()
+                                            }
+
+                                            device.createBond()
+                                            // Maintain continuous interaction with a paired device.
+                                            pvDevice = device
+                                            lastTime = System.currentTimeMillis()
+                                            while (device.bondState != BluetoothDevice.BOND_BONDED) {
+                                            }
+                                            try {
+                                                val uuids = device.uuids
+                                                deviceUUID = UUID.fromString(uuids[0].uuid.toString())
+                                                val deviceAddr = device.address
+                                                getSharedPreferences(
+                                                    Constants.SHARED_PREFS_SETTINGS,
+                                                    Context.MODE_PRIVATE
+                                                ).edit().putString(
+                                                    Constants.SETTINGS_KEY_AUTOCONN_MAC, deviceAddr.toString()
+                                                ).apply()
+
+                                                deviceName = deviceToPair.name
+
+                                                dialog.show(supportFragmentManager, "LoadingDialog")
+                                                CoroutineScope(Dispatchers.IO).launch {
+                                                    btSocket =
+                                                        pvDevice.createRfcommSocketToServiceRecord(deviceUUID)
+                                                    Log.d("socket", btSocket.toString())
+                                                    kotlin.runCatching {
+                                                        btSocket.connect()
+                                                    }
+
+                                                    while (!btSocket.isConnected) {
+                                                    }
+                                                    isSocketConnected = true
+                                                }
+
+
+
+                                                Log.d("BT", "Connected")
+                                                isConnectingToDevice = true
+                                            } catch (_: Exception) {
+                                                runOnUiThread {
+                                                    Toast.makeText(
+                                                        this@MainActivity,
+                                                        getString(R.string.couldNotConnect, device.name),
+                                                        Toast.LENGTH_SHORT
+                                                    ).show()
+                                                }
+                                            }
+
+
+                                        }
+
+
+                                        // Process the data as needed
+
+                                    } catch (e: Exception) {
+
+                                        Log.d("autoconnect", e.toString())
+                                        runOnUiThread {
+                                            Toast.makeText(
+                                                this@MainActivity,
+                                                getString(
+                                                    R.string.couldNotConnect,
+                                                    getSharedPreferences(
+                                                        Constants.SHARED_PREFS_SETTINGS,
+                                                        Context.MODE_PRIVATE
+                                                    ).getString(Constants.SETTINGS_KEY_AUTOCONN_MAC, null)
+                                                ),
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                        }
+                                    } finally {
+                                        runOnUiThread {
+                                            Toast.makeText(
+                                                this@MainActivity,
+                                                getString(
+                                                    R.string.couldNotConnect,
+                                                    getSharedPreferences(
+                                                        Constants.SHARED_PREFS_SETTINGS,
+                                                        Context.MODE_PRIVATE
+                                                    ).getString(Constants.SETTINGS_KEY_AUTOCONN_MAC, null)
+                                                ),
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                        }
+                                    }
+                                }
+
+                                while (job.isActive) {
+                                    val currentTime = System.currentTimeMillis()
+                                    if (currentTime - BT_TIMEOUT > startTime) {
+                                        job.cancel()
+                                        try {
+                                            this@MainActivity.dialog.dialog?.dismiss()
+                                        } catch (e: Exception) {
+                                            Log.d("Dialog", "dismiss Err: $e")
+                                        }
+                                    }
+                                }
+                */
+
             }
-        
+        }
+
+
+        CoroutineScope(Dispatchers.Default).launch {
+            while (true) {
+
+
+                if (isConnectingToDevice) {
+
+                    if (isConnectingToSocket) {
+
+                    } else if (isSocketConnected) {
+                        Log.d("actionLoop", "connectingToDevice + Socket Is connected")
+                        val outStream = btSocket.outputStream
+                        val inStream = btSocket.inputStream
+                        val startSendJob = System.currentTimeMillis()
+                        val sendJob = CoroutineScope(Dispatchers.IO).launch {
+                            Log.d("verify", "sending ? on another thread")
+                            outStream.write('?'.code)
+                            outStream.flush()
+                            delay(1500)
+                        }
+                        while (sendJob.isActive) {
+                            val curr = System.currentTimeMillis()
+                            if (curr - BT_TIMEOUT > startSendJob) {
+                                sendJob.cancel()
+                            }
+
+                        }
+                        Log.d("verification", "sent ?")
+                        val bufferString = readUntilChar(inStream, 'R')
+                        val isDevice = bufferString.contains("SOPR")
+                        Log.d("buffSTR + isDevice", "$bufferString --- $isDevice")
+                        if (!isDevice || bufferString.contains("timeout")) {
+                            try {
+                                this@MainActivity.dialog.dialog?.dismiss()
+                            } catch (e: Exception) {
+                                Log.d("Dialog", "dismiss Err: $e")
+                            }
+                            isConnectingToDevice = false
+                            runOnUiThread {
+                                try {
+                                    btSocket.close()
+                                } catch (e: Exception) {
+                                    Log.d("Socket ERR", e.toString())
+                                }
+
+                                onDisconnected()
+                                val builder = AlertDialog.Builder(this@MainActivity)
+
+                                builder.setMessage(R.string.conn_timeout)
+                                    .setCancelable(false)
+                                    .setPositiveButton(R.string.closeDialog) { dialog, _ ->
+                                        dialog.dismiss()
+                                    }
+
+                                val alert = builder.create()
+                                alert.show()
+
+
+                            }
+                        } else {
+                            isConnectingToDevice = false
+                            isConnectedToDevice = true
+                            try {
+                                this@MainActivity.dialog.dialog?.dismiss()
+                            } catch (e: Exception) {
+                                Log.d("Dialog", "dismiss Err: $e")
+                            }
+                            runOnUiThread {
+                                onConnected()
+                            }
+
+                        }
+
+                        Log.d("STRING", bufferString.toString())
+
+                    } else {
+                        isConnectingToDevice = false
+                        isConnectedToDevice = false
+                        try {
+                            this@MainActivity.dialog.dialog?.dismiss()
+                        } catch (e: Exception) {
+                            Log.d("Dialog", "dismiss Err: $e")
+                        }
+                    }
+                } else if (isConnectedToDevice) {
+                    if (isSocketConnected) {
+
+                        Log.d("actionLoop", "connectedDevice + Socket Is connected")
+
+
+                        val currentTime = System.currentTimeMillis()
+
+                        try {
+                            // Read from the InputStream
+                            val stream = btSocket.inputStream
+                            val outputStream = btSocket.outputStream
+
+                            outputStream.write('J'.code)
+                            outputStream.flush()
+
+                            readUntilChar(stream, '{')
+                            val jsonSb = StringBuilder(10000)
+                            jsonSb.append("{")
+                            jsonSb.append(readUntilChar(stream, '}'))
+                            jsonSb.append("}")
+
+                            //replace everything before {
+                            var indexOfDesiredChar = jsonSb.indexOf("{")
+
+                            if (indexOfDesiredChar != -1) {
+                                // Replace the portion of the string before the desired character with an empty string
+                                jsonSb.replace(0, indexOfDesiredChar, "")
+                            }
+
+                            //replace everything after }, should end up with isolated JSON
+                            indexOfDesiredChar = jsonSb.indexOf("}")
+                            if (indexOfDesiredChar != -1) {
+                                // Replace the portion of the string before the desired character with an empty string
+                                jsonSb.replace(indexOfDesiredChar + 1, jsonSb.length, "")
+                            }
+
+
+                            val jsonString = jsonSb.toString()
+
+
+
+                            Log.d("JSONString", jsonString)
+                            var jsonDecoded = SolarInfo()
+                            if (jsonString.startsWith('{') && jsonString.endsWith('}') && !jsonString.contains(
+                                    "timeout"
+                                )
+                            ) {
+                                lastTime = currentTime
+                                try {
+                                    this@MainActivity.dialog.dialog?.dismiss()
+                                } catch (e: Exception) {
+                                    Log.d("Dialog", "dismiss Err: $e")
+                                }
+                                pageData.lastUpdated = LocalTime.now()
+                            }
+
+                            try {
+                                jsonDecoded = Gson().fromJson(jsonString, SolarInfo::class.java)
+
+                            } catch (e: Exception) {
+                                Log.d("GSON_E", e.toString())
+                            }
+
+
+                            Log.d("JSON", jsonDecoded.toString())
+
+                            pageData = jsonDecoded
+
+                            runOnUiThread {
+                                val diff = currentTime - BT_TIMEOUT
+                                if (diff > lastTime) {
+                                    isConnectedToDevice = false
+                                    btSocket.close()
+                                    onDisconnected()
+                                    try {
+                                        this@MainActivity.dialog.dialog?.dismiss()
+                                    } catch (e: Exception) {
+                                        Log.d("Dialog", "dismiss Err: $e")
+                                    }
+                                    val builder = AlertDialog.Builder(this@MainActivity)
+
+                                    builder.setMessage(R.string.conn_timeout)
+                                        .setCancelable(false)
+                                        .setPositiveButton(R.string.closeDialog) { dialog, _ ->
+                                            try {
+                                                this@MainActivity.dialog.dialog?.dismiss()
+                                            } catch (e: Exception) {
+                                                Log.d("Dialog", "dismiss Err: $e")
+                                            }
+                                        }
+
+                                    val alert = builder.create()
+                                    alert.show()
+
+
+                                }
+
+
+                            }
+
+                            if (jsonString.startsWith('{') && jsonString.endsWith('}') && !jsonString.contains(
+                                    "timeout"
+                                )
+                            ) {
+                                runOnUiThread {
+                                    onConnected()
+                                }
+                            }
+
+
+                        } catch (e: Exception) {
+                            Log.d("ERR", e.toString())
+                            runOnUiThread {
+                                isConnectedToDevice = false
+                                btSocket.close()
+                                onDisconnected()
+                                try {
+                                    this@MainActivity.dialog.dialog?.dismiss()
+                                } catch (e: Exception) {
+                                    Log.d("Dialog", "dismiss Err: $e")
+                                }
+                                val builder = AlertDialog.Builder(this@MainActivity)
+
+                                builder.setMessage(R.string.conn_timeout)
+                                    .setCancelable(false)
+                                    .setPositiveButton(R.string.closeDialog) { dialog, _ ->
+                                        try {
+                                            this@MainActivity.dialog.dialog?.dismiss()
+                                        } catch (e: Exception) {
+                                            Log.d("Dialog", "dismiss Err: $e")
+                                        }
+                                    }
+
+                                val alert = builder.create()
+                                alert.show()
+                            }
+                            // Start the service over to restart listening mode
+
+                        }
+
+                    }
+
+
+                } else {
+                    runOnUiThread {
+                        onDisconnected()
+                    }
+                }
+
+                val delay = 1000 * getSharedPreferences(
+                    Constants.SHARED_PREFS_SETTINGS,
+                    Context.MODE_PRIVATE
+                ).getInt(Constants.SETTINGS_KEY_REFRESHSECS, 3)
+                delay(delay.toLong())
+            }
+        }
 
 
     }
@@ -657,6 +1319,9 @@ class MainActivity : AppCompatActivity() {
 
     private fun onDisconnected() {
         isSocketConnected = false
+        isConnectingToSocket = false
+        isConnectedToDevice = false
+        isConnectingToDevice = false
         ledLayout.visibility = View.GONE
         graphLayout.visibility = View.GONE
         statusLayout.visibility = View.GONE
@@ -682,7 +1347,7 @@ class MainActivity : AppCompatActivity() {
             R.string.battery_charger,
             getString(R.string.graph_solar)
         ) else getString(R.string.battery_charger, getString(R.string.graph_source))
-        txtBatteryTemp.text = getString(R.string.battery_temperature,   pageData.temp.dropLast(3))
+        txtBatteryTemp.text = getString(R.string.battery_temperature, pageData.temp.dropLast(3))
         txtFW.text = getString(R.string.fw_version, pageData.fw)
 
         btnSettings.visibility = if (isConnectedToDevice) View.GONE else View.VISIBLE
@@ -697,19 +1362,22 @@ class MainActivity : AppCompatActivity() {
 
         var runtimeDataString = pageData.run.split('.')
 
-        for (data in runtimeDataString){
+        for (data in runtimeDataString) {
             runtimeData[runtimeDataString.indexOf(data)] = data.toInt()
         }
 
 
-        try{
-            txtRuntime.text = getString(R.string.runtime, runtimeData[0], runtimeData[1], runtimeData[2], runtimeData[3],)
-        } catch (e: Exception){
+        try {
+            txtRuntime.text = getString(
+                R.string.runtime,
+                runtimeData[0],
+                runtimeData[1],
+                runtimeData[2],
+                runtimeData[3],
+            )
+        } catch (e: Exception) {
             Log.d("RenderError", e.toString())
         }
-
-
-
 
 
         //buttons
@@ -746,14 +1414,18 @@ class MainActivity : AppCompatActivity() {
         }
 
 
-        var entries: MutableList<Entry> = mutableListOf(Entry())
+        val entriesPhoto: MutableList<Entry> = mutableListOf(Entry())
+        val entriesSource: MutableList<Entry> = mutableListOf(Entry())
+        val entriesBattery: MutableList<Entry> = mutableListOf(Entry())
+
         for ((index, data) in pageData.pH.withIndex()) {
             // turn your data into Entry objects
-            entries.add(Entry(index.toFloat(), data.toFloat()))
+            entriesPhoto.add(Entry(index.toFloat(), data.toFloat()))
         }
-        entries.removeLast()
+        entriesPhoto.removeLast()
+        entriesPhoto.removeFirst()
 
-        var dataset: LineDataSet = LineDataSet(entries, getString(R.string.graph_solar))
+        var dataset: LineDataSet = LineDataSet(entriesPhoto, getString(R.string.graph_solar))
         dataset.color = getColor(R.color.white)
         dataset.lineWidth = 3f
         dataset.valueTextSize = 5f
@@ -761,18 +1433,44 @@ class MainActivity : AppCompatActivity() {
 
         var lineData = LineData(dataset)
 
+        Log.d("line", entriesPhoto.toString())
+
 
         graphSolar.data = lineData
         graphSolar.invalidate()
 
-        entries.clear()
+
+
+        for ((index, data) in pageData.sH.withIndex()) {
+            // turn your data into Entry objects
+            entriesSource.add(Entry(index.toFloat(), data.toFloat()))
+        }
+        entriesSource.removeLast()
+        entriesSource.removeFirst()
+
+        dataset = LineDataSet(entriesSource, getString(R.string.graph_source))
+        dataset.color = getColor(R.color.white)
+        dataset.lineWidth = 3f
+        dataset.valueTextSize = 5f
+        dataset.setDrawValues(false)
+
+        lineData = LineData(dataset)
+        graphSource.data = lineData
+        graphSource.invalidate()
+
+        Log.d("line", entriesSource.toString())
+
+
+
+
         for ((index, data) in pageData.bH.withIndex()) {
             // turn your data into Entry objects
-            entries.add(Entry(index.toFloat(), data.toFloat()))
+            entriesBattery.add(Entry(index.toFloat(), data.toFloat()))
         }
-        entries.removeLast()
+        entriesBattery.removeLast()
+        entriesBattery.removeFirst()
 
-        dataset = LineDataSet(entries, getString(R.string.graph_battery))
+        dataset = LineDataSet(entriesBattery, getString(R.string.graph_battery))
         dataset.color = getColor(R.color.white)
         dataset.lineWidth = 3f
         dataset.valueTextSize = 5f
@@ -783,30 +1481,10 @@ class MainActivity : AppCompatActivity() {
         graphBattery.data = lineData
         graphBattery.invalidate()
 
-        entries.clear()
-        for ((index, data) in pageData.sH.withIndex()) {
-            // turn your data into Entry objects
-            entries.add(Entry(index.toFloat(), data.toFloat()))
-        }
-        entries.removeLast()
-
-        dataset = LineDataSet(entries, getString(R.string.graph_source))
-        dataset.color = getColor(R.color.white)
-        dataset.lineWidth = 3f
-        dataset.valueTextSize = 5f
-        dataset.setDrawValues(false)
-
-        lineData = LineData(dataset)
-        graphSource.data = lineData
-        graphSource.invalidate()
-
+        Log.d("line", entriesBattery.toString())
 
 
     }
-
-
-
-
 
 
     override fun onRequestPermissionsResult(
@@ -816,7 +1494,7 @@ class MainActivity : AppCompatActivity() {
     ) {
         when (requestCode) {
             REQUEST_BLUETOOTH_CONNECT_PERMISSION -> {
-                if (grantResults.isNotEmpty() && grantResults.all {it == PackageManager.PERMISSION_GRANTED }) {
+                if (grantResults.isNotEmpty() && grantResults.all { it == PackageManager.PERMISSION_GRANTED }) {
                     // Permission has been granted.
                     // Perform the Bluetooth connection here.
                 } else {
@@ -847,8 +1525,8 @@ class MainActivity : AppCompatActivity() {
 
         }
 
-        if(Build.VERSION.SDK_INT <= Build.VERSION_CODES.R){
-            if (!arePermissionsGranted()){
+        if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.R) {
+            if (!arePermissionsGranted()) {
                 ActivityCompat.requestPermissions(
                     this,
                     arrayOf(
@@ -869,25 +1547,35 @@ class MainActivity : AppCompatActivity() {
     private fun readUntilChar(stream: InputStream?, target: Char): String {
         val sb = StringBuilder()
         var receivedChar: Char? = null
-        try {
-            var data: Int
-            val lastTime = LocalTime.now()
-            do {
-                if (LocalTime.now().minusSeconds(BT_READ_TIMEOUT).isAfter(lastTime)) {
-                    sb.clear()
-                    sb.append("timeout")
-                    break
-                }
-                data = stream!!.read()
-                if (data != -1) {
-                    receivedChar = data.toChar()
-                    sb.append(receivedChar)
-                }
-            } while (data != -1 && receivedChar != target)
-            return sb.toString()
-        } catch (e: IOException) {
-            // Error handling
+        var data: Int
+        val lastTime = LocalTime.now()
+        val job = CoroutineScope(Dispatchers.IO).launch {
+            try {
+                do {
+                    data = stream!!.read()
+                    //Log.d("readUntil", "reading until char, start: $lastTime, data: $data")
+
+                    if (data != -1) {
+                        receivedChar = data.toChar()
+                        sb.append(receivedChar)
+                    }
+                } while (data != -1 && receivedChar != target)
+            } catch (e: Exception) {
+                // Handle the IOException
+                sb.clear()
+                sb.append("timeout")
+                this.cancel()
+            }
         }
+        while (job.isActive) {
+            if (LocalTime.now().minusSeconds(BT_READ_TIMEOUT).isAfter(lastTime)) {
+                job.cancel()
+                sb.clear()
+                sb.append("timeout")
+
+            }
+        }
+
         return sb.toString()
     }
 
@@ -914,23 +1602,23 @@ class MainActivity : AppCompatActivity() {
     }
 
 
-
-
     override fun onResume() {
-        try{
-            if (!btSocket.isConnected){
-                if (isConnectedToDevice){
+        try {
+            if (!btSocket.isConnected) {
+                if (isConnectedToDevice) {
                     isSocketConnected = false
+                    isConnectingToSocket = false
                     isConnectedToDevice = false
                     isConnectingToDevice = false
                     onDisconnected()
                 }
             }
-        }catch (e: Exception){
-            if (isConnectedToDevice){
+        } catch (e: Exception) {
+            if (isConnectedToDevice) {
                 isSocketConnected = false
                 isConnectedToDevice = false
                 isConnectingToDevice = false
+                isConnectingToSocket = false
                 onDisconnected()
             }
         }
@@ -950,6 +1638,35 @@ class MainActivity : AppCompatActivity() {
         super.onPause()
     }
 
+    override fun onDestroy() {
+        try {
+            if (!btSocket.isConnected) {
+                if (isConnectedToDevice) {
+                    isSocketConnected = false
+                    isConnectingToSocket = false
+                    isConnectedToDevice = false
+                    isConnectingToDevice = false
+                    onDisconnected()
+                }
+            }
+        } catch (e: Exception) {
+            if (isConnectedToDevice) {
+                isSocketConnected = false
+                isConnectedToDevice = false
+                isConnectingToDevice = false
+                isConnectingToSocket = false
+                onDisconnected()
+            }
+        }
+        try {
+            btSocket.close()
+        } catch (e: Exception) {
+            Log.d("socket", "Error closing socket - probably already closed")
+        }
+        super.onDestroy()
+    }
+
+
     // Function to check if GPS is enabled
     private fun isGpsEnabled(context: Context): Boolean {
         val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
@@ -967,10 +1684,18 @@ class MainActivity : AppCompatActivity() {
                 // Open GPS settings
                 val intent = Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS)
                 context.startActivity(intent)
-                dialog.dismiss()
+                try {
+                    this@MainActivity.dialog.dialog?.dismiss()
+                } catch (e: Exception) {
+                    Log.d("Dialog", "dismiss Err: $e")
+                }
             }
             setNegativeButton(R.string.closeDialog) { dialog: DialogInterface, _: Int ->
-                dialog.dismiss()
+                try {
+                    this@MainActivity.dialog.dialog?.dismiss()
+                } catch (e: Exception) {
+                    Log.d("Dialog", "dismiss Err: $e")
+                }
                 Toast.makeText(context, R.string.gps_content, Toast.LENGTH_LONG).show()
                 finish()
             }
@@ -978,9 +1703,6 @@ class MainActivity : AppCompatActivity() {
         val alertDialog = alertDialogBuilder.create()
         alertDialog.show()
     }
-
-
-
 
 
 }
