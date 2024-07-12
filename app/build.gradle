@@ -5,12 +5,12 @@ plugins {
 
 android {
     namespace 'cz.pihrtm.sopr'
-    compileSdk 33
+    compileSdk 34
 
     defaultConfig {
         applicationId "cz.pihrtm.sopr"
         minSdk 28
-        targetSdk 33
+        targetSdk 34
         versionCode 4
         versionName "1.03"
 
