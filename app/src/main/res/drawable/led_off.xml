@@ -1,7 +1,11 @@
-<?xml version="1.0" encoding="utf-8"?>
-<shape xmlns:android="http://schemas.android.com/apk/res/android">
-<solid android:color="@color/led_gray"/>
-    <stroke android:color="@color/black" android:width="3dp"/>
-    <corners android:radius="16dp"/>
-    <size android:width="32dp" android:height="32dp"/>
-</shape>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="32dp"
+    android:height="32dp"
+    android:viewportWidth="32"
+    android:viewportHeight="32">
+    <path
+        android:fillColor="@color/led_gray"
+        android:strokeColor="@color/black"
+        android:strokeWidth="3"
+        android:pathData="M16,16m-14.5,0a14.5,14.5 0,1 1,29 0a14.5,14.5 0,1 1,-29 0" />
+</vector>

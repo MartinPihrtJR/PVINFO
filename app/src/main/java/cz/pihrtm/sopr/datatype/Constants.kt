@@ -5,4 +5,5 @@ object Constants {
     const val SETTINGS_KEY_REFRESHSECS = "refresh"
     const val SETTINGS_KEY_ENABLE_AUTOCONNECT = "autoconn"
     const val SETTINGS_KEY_AUTOCONN_MAC = "autoconnmac"
+    const val SETTINGS_KEY_BT_CHANNEL = "bt_channel"
 }
